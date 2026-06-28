@@ -431,6 +431,8 @@ export const WorkspaceApp = ({
   const [mobileNotebookPickerOpen, setMobileNotebookPickerOpen] = useState(false);
   const [mobileBottomNavActive, setMobileBottomNavActive] = useState<MobileBottomNavItem>("home");
   const [mobileSearchFocusToken, setMobileSearchFocusToken] = useState(0);
+  const [noteSearchFocusToken, setNoteSearchFocusToken] = useState(0);
+  const [noteReplaceFocusToken, setNoteReplaceFocusToken] = useState(0);
   const [memoListWidth, setMemoListWidth] = useState(readMemoListWidthPreference);
   const [search, setSearch] = useState("");
   const [syncSummary, setSyncSummary] = useState<SyncQueueSummary>(emptySyncQueueSummary);
@@ -1232,7 +1234,14 @@ export const WorkspaceApp = ({
       }
 
       const key = event.key.toLowerCase();
-      if (key !== "f" && key !== "n") {
+      if (key !== "f" && key !== "h" && key !== "n") {
+        return;
+      }
+
+      const targetElement = event.target instanceof Element ? event.target : null;
+      const isEditorTextTarget = Boolean(targetElement?.closest(".ProseMirror"));
+
+      if ((key === "f" || key === "h") && isTextEntryTarget(event.target) && !isEditorTextTarget) {
         return;
       }
 
@@ -1253,11 +1262,26 @@ export const WorkspaceApp = ({
 
       if (key === "f") {
         event.preventDefault();
-        if (event.shiftKey) {
-          setSearch("");
+        if (event.shiftKey || !selectedMemoId || !isDesktopViewport()) {
+          if (event.shiftKey) {
+            setSearch("");
+          }
+          clearMemoSelection();
+          handleMobileSearch();
+          return;
         }
-        clearMemoSelection();
-        handleMobileSearch();
+
+        setNoteSearchFocusToken((value) => value + 1);
+        return;
+      }
+
+      if (key === "h") {
+        if (!selectedMemoId || memoView === "trash" || !isDesktopViewport()) {
+          return;
+        }
+
+        event.preventDefault();
+        setNoteReplaceFocusToken((value) => value + 1);
         return;
       }
 
@@ -1288,9 +1312,11 @@ export const WorkspaceApp = ({
     handleCreateMemo,
     handleMobileSearch,
     memoDeleteConfirmation,
+    memoView,
     mobileNotebookPickerOpen,
     notebookDeleteConfirmation,
     notebookNameDialog,
+    selectedMemoId,
     tagsOpen,
     templatesOpen,
   ]);
@@ -1556,6 +1582,8 @@ export const WorkspaceApp = ({
                 isTrashView={memoView === "trash"}
                 notebooks={notebooks}
                 isLoading={memoQuery.isLoading}
+                searchFocusToken={noteSearchFocusToken}
+                replaceFocusToken={noteReplaceFocusToken}
                 imageCompressionEnabled={imageCompressionEnabled}
                 hasNextMemo={Boolean(nextMemoId)}
                 hasPreviousMemo={Boolean(previousMemoId)}

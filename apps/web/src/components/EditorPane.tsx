@@ -13,13 +13,14 @@ import {
   Trash2,
   Tags,
   Save,
+  ReplaceAll,
   MoreHorizontal,
   Sparkles,
+  Search,
   X,
-  Plus,
-  CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Command,
   CommandEmpty,
@@ -60,6 +61,55 @@ import {
 } from "@/lib/app-helpers";
 
 const SUPPORTED_PASTE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
+
+type NoteSearchMatch = {
+  from: number;
+  to: number;
+};
+
+const getEditorSearchMatches = (editor: Editor | null, query: string): NoteSearchMatch[] => {
+  const needle = query.trim().toLocaleLowerCase();
+
+  if (!editor || needle.length === 0) {
+    return [];
+  }
+
+  const characters: Array<{ char: string; pos: number }> = [];
+  let previousTextEnd: number | null = null;
+
+  editor.state.doc.descendants((node, pos) => {
+    if (!node.isText || !node.text) {
+      return;
+    }
+
+    if (previousTextEnd !== null && pos > previousTextEnd) {
+      characters.push({ char: "\u0000", pos: -1 });
+    }
+
+    for (let index = 0; index < node.text.length; index += 1) {
+      characters.push({ char: node.text[index] ?? "", pos: pos + index });
+    }
+
+    previousTextEnd = pos + node.text.length;
+  });
+
+  const haystack = characters.map((item) => item.char).join("").toLocaleLowerCase();
+  const matches: NoteSearchMatch[] = [];
+  let index = haystack.indexOf(needle);
+
+  while (index !== -1) {
+    const start = characters[index];
+    const end = characters[index + needle.length - 1];
+
+    if (start && end && start.pos >= 0 && end.pos >= 0) {
+      matches.push({ from: start.pos, to: end.pos + 1 });
+    }
+
+    index = haystack.indexOf(needle, index + needle.length);
+  }
+
+  return matches;
+};
 
 const getImageFilesFromDataTransfer = (dataTransfer: DataTransfer | null) => {
   if (!dataTransfer) {
@@ -184,6 +234,8 @@ export const EditorPane = ({
   onDeleted,
   onPermanentDeleted,
   onRestored,
+  searchFocusToken,
+  replaceFocusToken,
 }: {
   memo: MemoDetail | null;
   isTrashView: boolean;
@@ -199,6 +251,8 @@ export const EditorPane = ({
   onDeleted: (memoId: string) => Promise<void>;
   onPermanentDeleted: (memoId: string) => Promise<void>;
   onRestored: (memoId: string) => Promise<void>;
+  searchFocusToken: number;
+  replaceFocusToken: number;
 }) => {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
@@ -212,10 +266,18 @@ export const EditorPane = ({
   const [editorActionsOpen, setEditorActionsOpen] = useState(false);
   const [mobileNotebookSheetOpen, setMobileNotebookSheetOpen] = useState(false);
   const [notebookUpdatePending, setNotebookUpdatePending] = useState(false);
+  const [noteSearchOpen, setNoteSearchOpen] = useState(false);
+  const [noteSearchQuery, setNoteSearchQuery] = useState("");
+  const [noteSearchReplaceOpen, setNoteSearchReplaceOpen] = useState(false);
+  const [noteSearchReplacement, setNoteSearchReplacement] = useState("");
+  const [noteSearchIndex, setNoteSearchIndex] = useState(0);
   const notebookOptions = useMemo(() => getNotebookMoveOptions(notebooks), [notebooks]);
+  const readOnly = isTrashView || Boolean(memo?.isDeleted);
 
   const memoRef = useRef<MemoDetail | null>(memo);
   const editorRef = useRef<Editor | null>(null);
+  const noteSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const noteReplaceInputRef = useRef<HTMLInputElement | null>(null);
   const hydratingRef = useRef(false);
   const hasUnsavedChangesRef = useRef(false);
   const editingMemoIdRef = useRef<string | null>(memo?.id ?? null);
@@ -322,6 +384,109 @@ export const EditorPane = ({
       }
     };
   }, [editor]);
+
+  const noteSearchMatches = useMemo(
+    () => getEditorSearchMatches(editor, noteSearchQuery),
+    [dirtyVersion, editor, memo?.id, noteSearchQuery]
+  );
+
+  const selectNoteSearchMatch = useCallback(
+    (index: number) => {
+      const match = noteSearchMatches[index];
+
+      if (!editor || !match) {
+        return;
+      }
+
+      editor.commands.setTextSelection({ from: match.from, to: match.to });
+    },
+    [editor, noteSearchMatches]
+  );
+
+  const focusNoteSearchInput = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      noteSearchInputRef.current?.focus();
+      noteSearchInputRef.current?.select();
+    });
+  }, []);
+
+  const openNoteSearch = useCallback((showReplace = false) => {
+    setNoteSearchOpen(true);
+    setNoteSearchReplaceOpen(showReplace);
+    focusNoteSearchInput();
+  }, [focusNoteSearchInput]);
+
+  const openNoteReplace = useCallback(() => {
+    setNoteSearchOpen(true);
+    setNoteSearchReplaceOpen(true);
+    focusNoteSearchInput();
+  }, [focusNoteSearchInput]);
+
+  const closeNoteSearch = useCallback(() => {
+    setNoteSearchOpen(false);
+    editor?.commands.focus();
+  }, [editor]);
+
+  const moveNoteSearchMatch = useCallback(
+    (direction: 1 | -1) => {
+      if (noteSearchMatches.length === 0) {
+        return;
+      }
+
+      setNoteSearchIndex((current) => {
+        const next = (current + direction + noteSearchMatches.length) % noteSearchMatches.length;
+        selectNoteSearchMatch(next);
+        return next;
+      });
+    },
+    [noteSearchMatches.length, selectNoteSearchMatch]
+  );
+
+  useEffect(() => {
+    if (searchFocusToken === 0) {
+      return;
+    }
+
+    openNoteSearch();
+  }, [openNoteSearch, searchFocusToken]);
+
+  useEffect(() => {
+    if (replaceFocusToken === 0) {
+      return;
+    }
+
+    openNoteReplace();
+  }, [openNoteReplace, replaceFocusToken]);
+
+  useEffect(() => {
+    setNoteSearchIndex(0);
+
+    if (noteSearchOpen && noteSearchMatches[0]) {
+      selectNoteSearchMatch(0);
+    }
+  }, [noteSearchMatches, noteSearchOpen, selectNoteSearchMatch]);
+
+  const replaceAllNoteSearchMatches = useCallback(() => {
+    if (!editor || readOnly || noteSearchMatches.length === 0) {
+      return;
+    }
+
+    editor
+      .chain()
+      .focus()
+      .command(({ tr, dispatch }) => {
+        for (const match of [...noteSearchMatches].reverse()) {
+          tr.insertText(noteSearchReplacement, match.from, match.to);
+        }
+
+        dispatch?.(tr);
+        return true;
+      })
+      .run();
+
+    setNoteSearchIndex(0);
+    window.requestAnimationFrame(() => noteSearchInputRef.current?.focus());
+  }, [editor, noteSearchMatches, noteSearchReplacement, readOnly]);
 
   useEffect(() => {
     if (!editor) {
@@ -594,7 +759,6 @@ export const EditorPane = ({
     );
   }
 
-  const readOnly = isTrashView || memo.isDeleted;
   const saveLabel =
     saveState === "saving"
       ? "保存中"
@@ -644,6 +808,9 @@ export const EditorPane = ({
     notebookUpdatePending ||
     imageUploadState === "compressing" ||
     imageUploadState === "uploading";
+  const noteSearchMatchLabel = noteSearchQuery.trim()
+    ? `${noteSearchMatches.length > 0 ? noteSearchIndex + 1 : 0}/${noteSearchMatches.length}`
+    : "0/0";
 
   const updateMemoNotebook = (notebookId: string, sourceMemo: MemoDetail = memoRef.current ?? memo) => {
     if (readOnly || notebookId === sourceMemo.notebookId || notebookUpdatePending) {
@@ -813,6 +980,9 @@ export const EditorPane = ({
             >
               {saveMutation.isPending ? "保存中" : "完成"}
             </button>
+            <Button className="hidden sm:inline-flex" size="icon" variant="ghost" title="搜索当前笔记" aria-label="搜索当前笔记" onClick={() => openNoteSearch()}>
+              <Search className="h-4 w-4" />
+            </Button>
             <Button className="hidden sm:inline-flex" size="icon" variant="ghost" title="版本历史" aria-label="版本历史" onClick={() => setHistoryOpen(true)}>
               <History className="h-4 w-4" />
             </Button>
@@ -841,6 +1011,20 @@ export const EditorPane = ({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44 bg-white border border-slate-200 rounded-md py-1 shadow-md">
+                <DropdownMenuItem
+                  className="flex h-9 w-full items-center gap-2 px-3 text-left text-sm text-slate-700 hover:bg-slate-50 cursor-pointer outline-none"
+                  onClick={() => openNoteSearch()}
+                >
+                  <Search className="h-4 w-4 text-slate-500" />
+                  搜索当前笔记
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="flex h-9 w-full items-center gap-2 px-3 text-left text-sm text-slate-700 hover:bg-slate-50 cursor-pointer outline-none"
+                  onClick={openNoteReplace}
+                >
+                  <ReplaceAll className="h-4 w-4 text-slate-500" />
+                  替换当前笔记
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   className="flex h-9 w-full items-center gap-2 px-3 text-left text-sm text-slate-700 hover:bg-slate-50 cursor-pointer outline-none"
                   onClick={() => {
@@ -912,6 +1096,95 @@ export const EditorPane = ({
             />
           </label>
         </div>
+        {noteSearchOpen && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 sm:px-7">
+            <Search className="h-4 w-4 shrink-0 text-slate-400" />
+            <Input
+              ref={noteSearchInputRef}
+              value={noteSearchQuery}
+              className="h-8 min-w-[12rem] flex-1"
+              placeholder="在当前笔记内搜索"
+              onChange={(event) => setNoteSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  moveNoteSearchMatch(event.shiftKey ? -1 : 1);
+                }
+
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeNoteSearch();
+                }
+              }}
+            />
+            {noteSearchReplaceOpen && (
+              <Input
+                ref={noteReplaceInputRef}
+                value={noteSearchReplacement}
+                className="h-8 min-w-[12rem] flex-1"
+                placeholder="替换为"
+                disabled={readOnly}
+                onChange={(event) => setNoteSearchReplacement(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    replaceAllNoteSearchMatches();
+                  }
+
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    closeNoteSearch();
+                  }
+                }}
+              />
+            )}
+            <span
+              className={cn(
+                "w-12 shrink-0 text-center text-xs tabular-nums",
+                noteSearchQuery.trim() && noteSearchMatches.length === 0 ? "text-rose-500" : "text-slate-500"
+              )}
+              aria-live="polite"
+            >
+              {noteSearchMatchLabel}
+            </span>
+            <Button
+              size="icon"
+              variant="ghost"
+              title="上一个搜索结果"
+              aria-label="上一个搜索结果"
+              disabled={noteSearchMatches.length === 0}
+              onClick={() => moveNoteSearchMatch(-1)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              title="下一个搜索结果"
+              aria-label="下一个搜索结果"
+              disabled={noteSearchMatches.length === 0}
+              onClick={() => moveNoteSearchMatch(1)}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            {noteSearchReplaceOpen && (
+              <Button
+                size="sm"
+                variant="solid"
+                title="全部替换"
+                aria-label="全部替换"
+                disabled={readOnly || noteSearchMatches.length === 0}
+                onClick={replaceAllNoteSearchMatches}
+              >
+                <ReplaceAll className="h-4 w-4" />
+                全部替换
+              </Button>
+            )}
+            <Button size="icon" variant="ghost" title="关闭搜索" aria-label="关闭搜索" onClick={closeNoteSearch}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
         <EditorToolbar editor={editor} readOnly={readOnly} />
       </header>
 
