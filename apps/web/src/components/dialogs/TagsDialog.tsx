@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Tags, X, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { cn, formatDateTime } from "@/lib/utils";
 import { AppConfirmDialog } from "./ConfirmDialogs";
@@ -117,9 +118,9 @@ export const TagsDialog = ({ onClose }: { onClose: () => void }) => {
                           <label className="sr-only" htmlFor={`tag-rename-${tag.name}`}>
                             标签名称
                           </label>
-                          <input
+                          <Input
                             id={`tag-rename-${tag.name}`}
-                            className="h-9 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20"
+                            className="h-9 min-w-0 flex-1 focus-visible:border-emerald-300 focus-visible:ring-emerald-500/20"
                             value={editingTagValue}
                             autoFocus
                             disabled={renameMutation.isPending}

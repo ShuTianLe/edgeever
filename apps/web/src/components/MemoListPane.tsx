@@ -38,7 +38,23 @@ import {
   TagX,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { GitHubRepositoryLink } from "@/components/GitHubRepositoryLink";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -68,18 +84,8 @@ import {
   readMemoListDensityPreference,
   writeMemoListDensityPreference,
 } from "@/lib/app-helpers";
-import { useDismissableLayer, useFloatingMenuControls, useBottomSheetSwipeToClose, useModalLayerControls } from "@/lib/app-hooks";
 
 const isDesktopViewport = () => window.matchMedia("(min-width: 1024px)").matches;
-
-const MobileSheetGrabber = ({ onPointerDown }: { onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void }) => (
-  <div
-    className={cn("flex justify-center py-2 sm:hidden", onPointerDown && "cursor-grab touch-none active:cursor-grabbing")}
-    onPointerDown={onPointerDown}
-  >
-    <div className="h-1 w-10 rounded-full bg-slate-300" />
-  </div>
-);
 
 const getSelectionCountLabel = (count: number) => (count > 0 ? `已选择 ${count} 条` : "选择笔记");
 
@@ -155,31 +161,16 @@ const MobileListActionsSheet = ({
   onOpenTrash: () => void;
   onListDensityChange: (value: MemoListDensity) => void;
   onSortModeChange: (value: MemoSortMode) => void;
-}) => {
-  const dialogRef = useRef<HTMLElement | null>(null);
-  const handleSheetSwipePointerDown = useBottomSheetSwipeToClose(dialogRef, onClose);
-  useModalLayerControls(dialogRef, onClose, { closeOnBrowserBack: true });
-
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-950/25 px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:hidden" onClick={onClose}>
-      <section
-        ref={dialogRef}
-        className="absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] max-h-[calc(100dvh_-_6.75rem_-_env(safe-area-inset-bottom))] overflow-hidden rounded-md border border-slate-200 bg-white shadow-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="mobile-list-actions-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <MobileSheetGrabber onPointerDown={handleSheetSwipePointerDown} />
+}) => (
+  <Drawer open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <DrawerContent className="bottom-[calc(5.25rem+env(safe-area-inset-bottom))] max-h-[calc(100dvh_-_6.75rem_-_env(safe-area-inset-bottom))] overflow-hidden rounded-md lg:hidden">
         <header className="flex h-12 items-center justify-between border-b border-slate-200 px-4">
-          <div className="min-w-0">
-            <div id="mobile-list-actions-title" className="truncate text-sm font-semibold text-slate-950">
-              列表选项
-            </div>
-            <div className="truncate text-xs text-slate-500">
+          <DrawerHeader className="min-w-0 p-0">
+            <DrawerTitle className="truncate">列表选项</DrawerTitle>
+            <DrawerDescription className="truncate">
               {listTitle} · {listDescription}
-            </div>
-          </div>
+            </DrawerDescription>
+          </DrawerHeader>
           <Button size="icon" variant="ghost" title="关闭" aria-label="关闭" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
@@ -198,22 +189,30 @@ const MobileListActionsSheet = ({
           )}
 
           <div className="px-3 py-2 text-xs font-semibold text-slate-400">显示方式</div>
-          {memoListDensityOptions.map((option) => (
-            <button
-              key={option.value}
-              className={cn(
-                "flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition",
-                listDensity === option.value ? "bg-[#f3f7f1] text-[#526d49]" : "text-slate-800 hover:bg-slate-50"
-              )}
-              type="button"
-              aria-pressed={listDensity === option.value}
-              onClick={() => onListDensityChange(option.value)}
-            >
-              <span className={listDensity === option.value ? "text-[#627f58]" : "text-slate-500"}>{option.icon}</span>
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
-              <CheckCircleCheck className={cn("h-4 w-4 shrink-0", listDensity === option.value ? "text-[#627f58]" : "text-transparent")} />
-            </button>
-          ))}
+          <ToggleGroup
+            className="flex-col items-stretch"
+            type="single"
+            value={listDensity}
+            onValueChange={(value) => {
+              if (value) {
+                onListDensityChange(value as MemoListDensity);
+              }
+            }}
+          >
+            {memoListDensityOptions.map((option) => (
+              <ToggleGroupItem
+                key={option.value}
+                className="h-11 w-full justify-start gap-3 rounded-md px-3 text-left text-sm data-[state=on]:bg-[#f3f7f1] data-[state=on]:text-[#526d49]"
+                size="default"
+                value={option.value}
+                aria-label={option.label}
+              >
+                <span className={listDensity === option.value ? "text-[#627f58]" : "text-slate-500"}>{option.icon}</span>
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                <CheckCircleCheck className={cn("h-4 w-4 shrink-0", listDensity === option.value ? "text-[#627f58]" : "text-transparent")} />
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
 
           <div className="my-2 h-px bg-slate-100" />
 
@@ -241,10 +240,9 @@ const MobileListActionsSheet = ({
           <MobileListActionButton icon={<Trash2 className="h-4 w-4" />} label="回收站" onClick={onOpenTrash} />
           <MobileListActionButton icon={<KeyRound className="h-4 w-4" />} label="MCP Token" onClick={onOpenSettings} />
         </div>
-      </section>
-    </div>
-  );
-};
+    </DrawerContent>
+  </Drawer>
+);
 
 const MobileSelectionActionButton = ({
   disabled = false,
@@ -330,122 +328,65 @@ const MobileMoveSheet = ({
   onClose: () => void;
   onMove: (notebookId: string) => void;
 }) => {
-  const dialogRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const handleSheetSwipePointerDown = useBottomSheetSwipeToClose(dialogRef, onClose);
-  const [notebookSearch, setNotebookSearch] = useState("");
   const options = useMemo(() => getNotebookMoveOptions(notebooks), [notebooks]);
   const selectedCountLabel = getSelectionCountLabel(selectedCount);
-  const moveSearchQuery = notebookSearch.trim().toLocaleLowerCase("zh-CN");
-
-  const filteredOptions = useMemo(() => {
-    if (!moveSearchQuery) {
-      return options;
-    }
-    return options.filter((option) =>
-      [option.name, option.selectLabel, option.slug ?? ""].some((value) =>
-        value.toLocaleLowerCase("zh-CN").includes(moveSearchQuery)
-      )
-    );
-  }, [moveSearchQuery, options]);
-
-  useModalLayerControls(dialogRef, onClose, { closeOnBrowserBack: true });
 
   useEffect(() => {
-    if (moveSearchQuery) {
-      return;
-    }
     window.setTimeout(() => {
       const selectedNode = listRef.current?.querySelector<HTMLElement>(
         `[data-mobile-move-notebook-id="${CSS.escape(selectedNotebookId)}"]`
       );
       selectedNode?.scrollIntoView({ block: "center" });
     }, 0);
-  }, [moveSearchQuery, selectedNotebookId]);
+  }, [selectedNotebookId]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/25 px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:hidden" onClick={onClose}>
-      <section
-        ref={dialogRef}
-        className="absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] max-h-[calc(100dvh_-_6.75rem_-_env(safe-area-inset-bottom))] overflow-hidden rounded-md border border-slate-200 bg-white shadow-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="mobile-move-sheet-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <MobileSheetGrabber onPointerDown={handleSheetSwipePointerDown} />
+    <Drawer open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DrawerContent className="bottom-[calc(5.25rem+env(safe-area-inset-bottom))] max-h-[calc(100dvh_-_6.75rem_-_env(safe-area-inset-bottom))] overflow-hidden rounded-md lg:hidden">
         <header className="flex h-12 items-center justify-between border-b border-slate-200 px-4">
-          <div className="min-w-0">
-            <div id="mobile-move-sheet-title" className="truncate text-sm font-semibold text-slate-950">
-              移动到笔记本
-            </div>
-            <div className="truncate text-xs text-slate-500">{selectedCountLabel}</div>
-          </div>
+          <DrawerHeader className="min-w-0 p-0">
+            <DrawerTitle className="truncate">移动到笔记本</DrawerTitle>
+            <DrawerDescription className="truncate">{selectedCountLabel}</DrawerDescription>
+          </DrawerHeader>
           <Button size="icon" variant="ghost" title="关闭" aria-label="关闭" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </header>
-        <div className="border-b border-slate-100 px-3 py-2">
-          <div className="flex h-9 items-center gap-2 rounded-md bg-slate-100 px-3 text-sm text-slate-500">
-            <Search className="h-4 w-4" />
-            <input
-              className="min-w-0 flex-1 bg-transparent text-slate-900 outline-none placeholder:text-slate-400"
-              value={notebookSearch}
-              placeholder="搜索笔记本"
-              aria-label="搜索笔记本"
-              onChange={(event) => setNotebookSearch(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" && notebookSearch) {
-                  event.preventDefault();
-                  setNotebookSearch("");
-                }
-              }}
-            />
-            {notebookSearch && (
-              <button
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-slate-700"
-                type="button"
-                title="清空搜索"
-                aria-label="清空搜索"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => setNotebookSearch("")}
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-        <div ref={listRef} className="max-h-[calc(100dvh_-_13.75rem_-_env(safe-area-inset-bottom))] overflow-y-auto p-2">
-          {filteredOptions.length > 0 ? (
-            filteredOptions.map((option: any) => {
-              const selected = option.id === selectedNotebookId;
-              return (
-                <button
-                  key={option.id}
-                  className={cn(
-                    "flex h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm transition",
-                    selected ? "bg-[#f3f7f1] font-semibold text-[#526d49]" : "text-slate-700 hover:bg-slate-50"
-                  )}
-                  style={{ paddingLeft: `${12 + option.depth * 18}px` }}
-                  type="button"
-                  data-mobile-move-notebook-id={option.id}
-                  aria-label={selected ? `当前目标：${option.name}` : `移动到 ${option.name}`}
-                  aria-pressed={selected}
-                  disabled={isMoving}
-                  onClick={() => onMove(option.id)}
-                >
-                  <NotebookIcon className={cn("h-4 w-4 shrink-0", selected ? "text-[#627f58]" : "text-slate-600")} />
-                  <span className="min-w-0 flex-1 truncate">{option.name}</span>
-                  {selected ? <CheckCircleCheck className="h-4 w-4 shrink-0 text-[#627f58]" /> : null}
-                </button>
-              );
-            })
-          ) : (
-            <div className="px-3 py-8 text-center text-sm font-medium text-slate-500">没有找到笔记本</div>
-          )}
-        </div>
-      </section>
-    </div>
+        <Command className="min-h-0 flex-1">
+          <CommandInput placeholder="搜索笔记本" />
+          <CommandList ref={listRef} className="max-h-[calc(100dvh_-_13.75rem_-_env(safe-area-inset-bottom))] p-2">
+            <CommandEmpty>没有找到笔记本</CommandEmpty>
+            <CommandGroup>
+              {options.map((option: any) => {
+                const selected = option.id === selectedNotebookId;
+                return (
+                  <CommandItem
+                    key={option.id}
+                    className={cn(
+                      "h-11 gap-2 px-3",
+                      selected ? "bg-[#f3f7f1] font-semibold text-[#526d49] data-[selected=true]:bg-[#f3f7f1]" : "text-slate-700"
+                    )}
+                    style={{ paddingLeft: `${12 + option.depth * 18}px` }}
+                    value={option.id}
+                    keywords={[option.name, option.selectLabel, option.slug ?? ""]}
+                    data-mobile-move-notebook-id={option.id}
+                    aria-label={selected ? `当前目标：${option.name}` : `移动到 ${option.name}`}
+                    aria-current={selected ? "page" : undefined}
+                    disabled={isMoving}
+                    onSelect={() => onMove(option.id)}
+                  >
+                    <NotebookIcon className={cn("h-4 w-4 shrink-0", selected ? "text-[#627f58]" : "text-slate-600")} />
+                    <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                    {selected ? <CheckCircleCheck className="h-4 w-4 shrink-0 text-[#627f58]" /> : null}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </DrawerContent>
+    </Drawer>
   );
 };
 
@@ -479,29 +420,14 @@ const MobileSelectionMoreSheet = ({
   onMerge: () => void;
   onPin: () => void;
   onToggleVisibleSelection: () => void;
-}) => {
-  const dialogRef = useRef<HTMLElement | null>(null);
-  const handleSheetSwipePointerDown = useBottomSheetSwipeToClose(dialogRef, onClose);
-  useModalLayerControls(dialogRef, onClose, { closeOnBrowserBack: true });
-
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-950/25 px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:hidden" onClick={onClose}>
-      <section
-        ref={dialogRef}
-        className="absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] max-h-[calc(100dvh_-_6.75rem_-_env(safe-area-inset-bottom))] overflow-hidden rounded-md border border-slate-200 bg-white shadow-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="mobile-selection-more-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <MobileSheetGrabber onPointerDown={handleSheetSwipePointerDown} />
+}) => (
+  <Drawer open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <DrawerContent className="bottom-[calc(5.25rem+env(safe-area-inset-bottom))] max-h-[calc(100dvh_-_6.75rem_-_env(safe-area-inset-bottom))] overflow-hidden rounded-md lg:hidden">
         <header className="flex h-12 items-center justify-between border-b border-slate-200 px-4">
-          <div className="min-w-0">
-            <div id="mobile-selection-more-title" className="truncate text-sm font-semibold text-slate-950">
-              批量操作
-            </div>
-            <div className="truncate text-xs text-slate-500">{getSelectionCountLabel(selectedCount)}</div>
-          </div>
+          <DrawerHeader className="min-w-0 p-0">
+            <DrawerTitle className="truncate">批量操作</DrawerTitle>
+            <DrawerDescription className="truncate">{getSelectionCountLabel(selectedCount)}</DrawerDescription>
+          </DrawerHeader>
           <Button size="icon" variant="ghost" title="关闭" aria-label="关闭" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
@@ -546,10 +472,9 @@ const MobileSelectionMoreSheet = ({
           <X className="h-4 w-4" />
           取消选择
         </button>
-      </section>
-    </div>
-  );
-};
+    </DrawerContent>
+  </Drawer>
+);
 
 const CheckCircleCheck = ({ className }: { className?: string }) => (
   <svg
@@ -1368,34 +1293,35 @@ export const MemoListPane = ({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <div className="flex h-8 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
-              <button
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center transition",
-                  listDensity === "preview" ? "bg-emerald-50 text-emerald-800" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                )}
-                type="button"
+            <ToggleGroup
+              className="h-8 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white"
+              type="single"
+              value={listDensity}
+              onValueChange={(value) => {
+                if (value) {
+                  handleListDensityChange(value as MemoListDensity);
+                }
+              }}
+            >
+              <ToggleGroupItem
+                className="rounded-none border-0"
+                size="icon"
                 title="预览列表"
+                value="preview"
                 aria-label="预览列表"
-                aria-pressed={listDensity === "preview"}
-                onClick={() => handleListDensityChange("preview")}
               >
                 <LayoutList className="h-4 w-4" />
-              </button>
-              <button
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center border-l border-slate-200 transition",
-                  listDensity === "compact" ? "bg-emerald-50 text-emerald-800" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                )}
-                type="button"
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                className="rounded-none border-0 border-l border-slate-200"
+                size="icon"
                 title="紧凑列表"
+                value="compact"
                 aria-label="紧凑列表"
-                aria-pressed={listDensity === "compact"}
-                onClick={() => handleListDensityChange("compact")}
               >
                 <List className="h-4 w-4" />
-              </button>
-            </div>
+              </ToggleGroupItem>
+            </ToggleGroup>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <DropdownMenu>

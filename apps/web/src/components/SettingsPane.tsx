@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, ShieldCheck, Trash2, ChevronLeft, Plus, User, Image, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import { cn, formatDateTime } from "@/lib/utils";
@@ -168,8 +170,8 @@ export const SettingsPane = ({
                   API Token 已成功生成
                 </div>
                 <div className="flex gap-2">
-                  <input
-                    className="h-10 min-w-0 flex-1 rounded-lg border border-emerald-200 bg-white px-3.5 font-mono text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  <Input
+                    className="min-w-0 flex-1 rounded-lg border-emerald-200 font-mono text-xs focus-visible:ring-emerald-500/20"
                     readOnly
                     value={createdToken.token}
                   />
@@ -191,8 +193,8 @@ export const SettingsPane = ({
 
             <form className="space-y-4 rounded-lg bg-slate-50/60 border border-slate-100 p-4" onSubmit={handleSubmit}>
               <div className="flex flex-col gap-3 sm:flex-row">
-                <input
-                  className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3.5 text-sm outline-none transition duration-150 focus:border-[#627f58] focus:ring-4 focus:ring-[#627f58]/10"
+                <Input
+                  className="min-w-0 flex-1 rounded-lg focus-visible:ring-4 focus-visible:ring-[#627f58]/10"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   placeholder="Token 用途描述，例如: Cline Agent"
@@ -222,11 +224,10 @@ export const SettingsPane = ({
                           : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50/50"
                       )}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selectedScopes.has(scope)}
-                        onChange={() => toggleScope(scope)}
-                        className="h-4 w-4 shrink-0 rounded border-emerald-300 text-[#627f58] focus:ring-[#627f58]"
+                        onCheckedChange={() => toggleScope(scope)}
+                        className="border-emerald-300"
                       />
                       <span className="min-w-0 truncate font-mono text-[11px] font-semibold">{scope}</span>
                     </label>

@@ -13,6 +13,13 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Home, Search, KeyRound, Plus, ChevronDown, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { NotebookPane } from "./NotebookPane";
 import { MemoListPane } from "./MemoListPane";
 import { EditorPane } from "./EditorPane";
@@ -60,18 +67,9 @@ import {
   syncQueuedChanges,
   observeSyncQueue,
 } from "@/lib/app-helpers";
-import { useBrowserBackLayer, useBottomSheetSwipeToClose, useModalLayerControls } from "@/lib/app-hooks";
+import { useBrowserBackLayer } from "@/lib/app-hooks";
 
 const isDesktopViewport = () => window.matchMedia("(min-width: 1024px)").matches;
-
-const MobileSheetGrabber = ({ onPointerDown }: { onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void }) => (
-  <div
-    className={cn("flex justify-center py-2 sm:hidden", onPointerDown && "cursor-grab touch-none active:cursor-grabbing")}
-    onPointerDown={onPointerDown}
-  >
-    <div className="h-1 w-10 rounded-full bg-slate-300" />
-  </div>
-);
 
 const MobileBottomNavButton = ({
   active = false,
@@ -151,9 +149,7 @@ const MobileNotebookPicker = ({
   onSelectAll: () => void;
   onSelect: (notebookId: string) => void;
 }) => {
-  const dialogRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const handleSheetSwipePointerDown = useBottomSheetSwipeToClose(dialogRef, onClose);
   const [notebookSearch, setNotebookSearch] = useState("");
   const tree = useMemo(() => buildNotebookTree(notebooks), [notebooks]);
   const filteredTree = useMemo(() => filterNotebookTree(tree, notebookSearch), [notebookSearch, tree]);
@@ -170,8 +166,6 @@ const MobileNotebookPicker = ({
   const searchActive = Boolean(searchQuery);
   const allNotebookBranchesExpanded =
     expandableNotebookIds.length > 0 && expandableNotebookIds.every((notebookId) => expandedNotebookIds.has(notebookId));
-
-  useModalLayerControls(dialogRef, onClose, { closeOnBrowserBack: true });
 
   useEffect(() => {
     if (selectedAncestorIds.length === 0) {
@@ -215,23 +209,13 @@ const MobileNotebookPicker = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/30 lg:hidden" onClick={onClose}>
-      <section
-        ref={dialogRef}
-        className="absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-hidden rounded-t-md border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-16px_40px_rgba(15,23,42,0.16)]"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="mobile-notebook-picker-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <MobileSheetGrabber onPointerDown={handleSheetSwipePointerDown} />
+    <Drawer open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DrawerContent className="inset-x-0 max-h-[82dvh] overflow-hidden border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)] lg:hidden">
         <header className="flex h-14 items-center justify-between border-b border-slate-200 px-4">
-          <div className="min-w-0">
-            <div id="mobile-notebook-picker-title" className="text-base font-semibold text-slate-950">
-              切换笔记本
-            </div>
-            <div className="truncate text-xs text-slate-500">当前：{selectedNotebookName}</div>
-          </div>
+          <DrawerHeader className="min-w-0 p-0">
+            <DrawerTitle className="text-base">切换笔记本</DrawerTitle>
+            <DrawerDescription className="truncate">当前：{selectedNotebookName}</DrawerDescription>
+          </DrawerHeader>
           <Button size="icon" variant="ghost" title="关闭" aria-label="关闭" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
@@ -326,8 +310,8 @@ const MobileNotebookPicker = ({
             </div>
           )}
         </div>
-      </section>
-    </div>
+      </DrawerContent>
+    </Drawer>
   );
 };
 
@@ -497,10 +481,13 @@ export const WorkspaceApp = ({
   const workspaceBackTargetActive = Boolean(
     appNoticeDialog ||
       notebookDeleteConfirmation ||
-      notebookNameDialog ||
-      memoDeleteConfirmation ||
-      mobileNotebookPickerOpen ||
-      mobileSearchActive ||
+	      notebookNameDialog ||
+	      memoDeleteConfirmation ||
+	      mobileNotebookPickerOpen ||
+	      mobileListActionsOpen ||
+	      mobileMoveOpen ||
+	      mobileMoreOpen ||
+	      mobileSearchActive ||
       templatesOpen ||
       rightView !== "editor" ||
       tagsOpen ||
@@ -1130,13 +1117,28 @@ export const WorkspaceApp = ({
       return true;
     }
 
-    if (mobileNotebookPickerOpen) {
-      setMobileNotebookPickerOpen(false);
-      return true;
-    }
+	    if (mobileNotebookPickerOpen) {
+	      setMobileNotebookPickerOpen(false);
+	      return true;
+	    }
 
-    if (mobileSearchActive) {
-      handleCancelMobileSearch();
+	    if (mobileListActionsOpen) {
+	      setMobileListActionsOpen(false);
+	      return true;
+	    }
+
+	    if (mobileMoveOpen) {
+	      setMobileMoveOpen(false);
+	      return true;
+	    }
+
+	    if (mobileMoreOpen) {
+	      setMobileMoreOpen(false);
+	      return true;
+	    }
+
+	    if (mobileSearchActive) {
+	      handleCancelMobileSearch();
       return true;
     }
 
@@ -1184,10 +1186,13 @@ export const WorkspaceApp = ({
     handleCloseSettings,
     handleCloseTemplates,
     handleCancelMobileSearch,
-    memoDeleteConfirmation,
-    memoSelectionModeActive,
-    mobileNotebookPickerOpen,
-    mobileSearchActive,
+	    memoDeleteConfirmation,
+	    memoSelectionModeActive,
+	    mobileListActionsOpen,
+	    mobileNotebookPickerOpen,
+	    mobileMoveOpen,
+	    mobileMoreOpen,
+	    mobileSearchActive,
     notebookDeleteConfirmation,
     notebookNameDialog,
     tagsOpen,

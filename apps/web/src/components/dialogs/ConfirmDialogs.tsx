@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { AlertTriangle, ShieldCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { Notebook } from "@edgeever/shared";
 
@@ -160,10 +161,10 @@ export const NotebookNameDialog = ({
             <label className="block text-xs font-semibold uppercase text-slate-500" htmlFor="notebook-name-input">
               名称
             </label>
-            <input
+            <Input
               id="notebook-name-input"
               ref={inputRef}
-              className="mt-2 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20"
+              className="mt-2 h-11 text-base focus-visible:border-emerald-300 focus-visible:ring-emerald-500/20"
               value={name}
               disabled={isSaving}
               maxLength={80}

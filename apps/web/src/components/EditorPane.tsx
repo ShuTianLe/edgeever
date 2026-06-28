@@ -21,6 +21,20 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -44,16 +58,6 @@ import {
   shouldQueueMemoSaveError,
   queueMemoUpdate,
 } from "@/lib/app-helpers";
-import { useDismissableLayer, useFloatingMenuControls, useBottomSheetSwipeToClose, useModalLayerControls } from "@/lib/app-hooks";
-
-const MobileSheetGrabber = ({ onPointerDown }: { onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void }) => (
-  <div
-    className={cn("flex justify-center py-2 sm:hidden", onPointerDown && "cursor-grab touch-none active:cursor-grabbing")}
-    onPointerDown={onPointerDown}
-  >
-    <div className="h-1 w-10 rounded-full bg-slate-300" />
-  </div>
-);
 
 const SUPPORTED_PASTE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
 
@@ -95,88 +99,6 @@ class MemoSaveRequestError extends Error {
   }
 }
 
-const MobileEditorActionsSheet = ({
-  readOnly,
-  onClose,
-  onDelete,
-  onOpenHistory,
-  onPermanentDelete,
-  onRestore,
-}: {
-  readOnly: boolean;
-  onClose: () => void;
-  onDelete: () => void;
-  onOpenHistory: () => void;
-  onPermanentDelete: () => void;
-  onRestore: () => void;
-}) => {
-  const dialogRef = useRef<HTMLElement | null>(null);
-  const handleSheetSwipePointerDown = useBottomSheetSwipeToClose(dialogRef, onClose);
-  useModalLayerControls(dialogRef, onClose, { closeOnBrowserBack: true });
-
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-950/25 lg:hidden" onClick={onClose}>
-      <section
-        ref={dialogRef}
-        className="absolute inset-x-0 bottom-0 overflow-hidden rounded-t-md border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-16px_40px_rgba(15,23,42,0.16)]"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="mobile-editor-actions-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <MobileSheetGrabber onPointerDown={handleSheetSwipePointerDown} />
-        <header className="flex h-12 items-center justify-between border-b border-slate-200 px-4">
-          <div id="mobile-editor-actions-title" className="text-base font-semibold text-slate-950">
-            笔记操作
-          </div>
-          <Button size="icon" variant="ghost" title="关闭" aria-label="关闭" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </header>
-        <div className="p-2">
-          <button
-            className="flex h-12 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-slate-800 transition hover:bg-slate-50"
-            type="button"
-            onClick={onOpenHistory}
-          >
-            <History className="h-5 w-5 text-slate-500" />
-            <span className="min-w-0 flex-1 truncate text-base">版本历史</span>
-          </button>
-          {readOnly ? (
-            <>
-              <button
-                className="flex h-12 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-slate-800 transition hover:bg-slate-50"
-                type="button"
-                onClick={onRestore}
-              >
-                <RotateCcw className="h-5 w-5 text-slate-500" />
-                <span className="min-w-0 flex-1 truncate text-base">恢复笔记</span>
-              </button>
-              <button
-                className="flex h-12 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-rose-700 transition hover:bg-rose-50"
-                type="button"
-                onClick={onPermanentDelete}
-              >
-                <Trash2 className="h-5 w-5" />
-                <span className="min-w-0 flex-1 truncate text-base">彻底删除</span>
-              </button>
-            </>
-          ) : (
-            <button
-              className="flex h-12 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-rose-700 transition hover:bg-rose-50"
-              type="button"
-              onClick={onDelete}
-            >
-              <Trash2 className="h-5 w-5" />
-              <span className="min-w-0 flex-1 truncate text-base">删除笔记</span>
-            </button>
-          )}
-        </div>
-      </section>
-    </div>
-  );
-};
-
 const MobileNotebookSelectSheet = ({
   isUpdating,
   options,
@@ -190,10 +112,7 @@ const MobileNotebookSelectSheet = ({
   onClose: () => void;
   onSelect: (notebookId: string) => void;
 }) => {
-  const dialogRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const handleSheetSwipePointerDown = useBottomSheetSwipeToClose(dialogRef, onClose);
-  useModalLayerControls(dialogRef, onClose, { closeOnBrowserBack: true });
 
   useEffect(() => {
     window.setTimeout(() => {
@@ -205,49 +124,48 @@ const MobileNotebookSelectSheet = ({
   }, [selectedNotebookId]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/25 lg:hidden" onClick={onClose}>
-      <section
-        ref={dialogRef}
-        className="absolute inset-x-0 bottom-0 max-h-[62dvh] overflow-hidden rounded-t-md border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-16px_40px_rgba(15,23,42,0.16)]"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="mobile-notebook-select-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <MobileSheetGrabber onPointerDown={handleSheetSwipePointerDown} />
+    <Drawer open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DrawerContent className="inset-x-0 max-h-[62dvh] overflow-hidden border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)] lg:hidden">
         <header className="flex h-12 items-center justify-between border-b border-slate-200 px-4">
-          <div id="mobile-notebook-select-title" className="text-base font-semibold text-slate-950">
-            所在笔记本
-          </div>
+          <DrawerHeader className="min-w-0 p-0">
+            <DrawerTitle className="text-base">所在笔记本</DrawerTitle>
+          </DrawerHeader>
           <Button size="icon" variant="ghost" title="关闭" aria-label="关闭" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </header>
-        <div ref={listRef} className="max-h-[calc(62dvh-3.75rem-env(safe-area-inset-bottom))] overflow-y-auto p-2">
-          {options.map((option) => {
-            const selected = option.id === selectedNotebookId;
-            return (
-              <button
-                key={option.id}
-                className={cn(
-                  "flex h-12 w-full items-center gap-2 rounded-md px-3 text-left text-sm transition",
-                  selected ? "bg-[#f3f7f1] font-semibold text-[#526d49]" : "text-slate-700 hover:bg-slate-50"
-                )}
-                style={{ paddingLeft: `${12 + option.depth * 18}px` }}
-                type="button"
-                data-mobile-notebook-select-id={option.id}
-                aria-label={selected ? `当前所在笔记本：${option.name}` : `切换到 ${option.name}`}
-                aria-current={selected ? "page" : undefined}
-                disabled={isUpdating}
-                onClick={() => onSelect(option.id)}
-              >
-                <span className="min-w-0 flex-1 truncate text-base">{option.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-    </div>
+        <Command className="min-h-0 flex-1">
+          <CommandInput placeholder="搜索笔记本" />
+          <CommandList ref={listRef} className="max-h-[calc(62dvh-6.25rem-env(safe-area-inset-bottom))] p-2">
+            <CommandEmpty>没有找到笔记本</CommandEmpty>
+            <CommandGroup>
+              {options.map((option) => {
+                const selected = option.id === selectedNotebookId;
+                return (
+                  <CommandItem
+                    key={option.id}
+                    className={cn(
+                      "h-12 px-3 text-base",
+                      selected ? "bg-[#f3f7f1] font-semibold text-[#526d49] data-[selected=true]:bg-[#f3f7f1]" : "text-slate-700"
+                    )}
+                    style={{ paddingLeft: `${12 + option.depth * 18}px` }}
+                    value={option.id}
+                    keywords={[option.name, option.selectLabel, option.slug ?? ""]}
+                    data-mobile-notebook-select-id={option.id}
+                    aria-label={selected ? `当前所在笔记本：${option.name}` : `切换到 ${option.name}`}
+                    aria-current={selected ? "page" : undefined}
+                    disabled={isUpdating}
+                    onSelect={() => onSelect(option.id)}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </DrawerContent>
+    </Drawer>
   );
 };
 

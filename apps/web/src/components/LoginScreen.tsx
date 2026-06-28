@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GitHubRepositoryLink } from "@/components/GitHubRepositoryLink";
+import { Input } from "@/components/ui/input";
 
 interface LoginScreenProps {
   error: string | null;
@@ -43,9 +44,9 @@ export const LoginScreen = ({ error, isSubmitting, onSubmit }: LoginScreenProps)
         <form className="space-y-5" onSubmit={handleSubmit}>
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-slate-700">账号</span>
-            <input
+            <Input
               autoComplete="username"
-              className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 text-sm outline-none transition-all duration-200 focus:border-[#627f58] focus:bg-white focus:ring-4 focus:ring-[#627f58]/10"
+              className="h-11 rounded-lg bg-slate-50/50 px-3.5 focus-visible:bg-white focus-visible:ring-4 focus-visible:ring-[#627f58]/10"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
             />
@@ -53,9 +54,9 @@ export const LoginScreen = ({ error, isSubmitting, onSubmit }: LoginScreenProps)
 
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-slate-700">密码</span>
-            <input
+            <Input
               autoComplete="current-password"
-              className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 text-sm outline-none transition-all duration-200 focus:border-[#627f58] focus:bg-white focus:ring-4 focus:ring-[#627f58]/10"
+              className="h-11 rounded-lg bg-slate-50/50 px-3.5 focus-visible:bg-white focus-visible:ring-4 focus-visible:ring-[#627f58]/10"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
