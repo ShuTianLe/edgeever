@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
-import { FileArchive, FileCheck2, Play, RotateCcw, UploadCloud } from "lucide-react";
+import { FileArchive, FileCheck2, HelpCircle, Play, RotateCcw, UploadCloud } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { parseEvernoteExportFiles, type EvernoteImportNotebook } from "@/lib/evernote-import";
@@ -13,6 +14,103 @@ type ImportedNotebookSummary = {
   name: string;
   createdCount: number;
 };
+
+const EvernoteImportGuideDialog = () => (
+  <Dialog>
+    <DialogTrigger asChild>
+      <Button size="sm" variant="outline" className="h-7 bg-white px-2.5 text-xs" type="button">
+        <HelpCircle className="h-3.5 w-3.5" />
+        操作指引
+      </Button>
+    </DialogTrigger>
+    <DialogContent className="max-h-[82vh] max-w-3xl gap-4 overflow-hidden p-0">
+      <DialogHeader className="border-b border-slate-100 px-5 py-4">
+        <DialogTitle className="text-base">从印象笔记迁移到 EdgeEver</DialogTitle>
+        <DialogDescription className="leading-5">
+          EdgeEver 只支持开放、可读取的 ENEX 文件；不直接支持印象笔记新版客户端导出的 .notes 文件。
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-5 overflow-y-auto px-5 pb-5 text-sm leading-6 text-slate-700">
+        <GuideSection title="准备 ENEX 文件">
+          <p>如果印象笔记客户端仍能直接导出 ENEX，可以按笔记本分别导出 .enex 文件。</p>
+          <p>如果客户端只能导出 .notes，可以参考第三方命令行工具 evernote-backup 先导出 ENEX：</p>
+          <pre className="overflow-x-auto rounded-md border border-slate-100 bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+            <code>{`pipx install evernote-backup
+evernote-backup init-db --backend china
+evernote-backup sync
+evernote-backup export ./edgeever-import`}</code>
+          </pre>
+          <ul className="list-disc space-y-1 pl-5">
+            <li><code>--backend china</code> 用于连接印象笔记中国版。</li>
+            <li><code>sync</code> 会把账号里的笔记同步到本地数据库。</li>
+            <li><code>export ./edgeever-import</code> 会导出 ENEX 文件。</li>
+            <li>evernote-backup 默认会按笔记本导出，一个笔记本对应一个 .enex 文件。</li>
+          </ul>
+        </GuideSection>
+
+        <GuideSection title="在 Web 应用中导入">
+          <ol className="list-decimal space-y-1 pl-5">
+            <li>在电脑浏览器中打开 EdgeEver。</li>
+            <li>进入左侧“个人中心 / 我的”。</li>
+            <li>找到“导入印象笔记”。</li>
+            <li>选择一个或多个 .enex 文件。</li>
+            <li>检查导入计划中的笔记本数量和笔记数量。</li>
+            <li>点击“开始导入”。</li>
+            <li>每导完一个笔记本，先在 EdgeEver 中检查结果，再点击“确认结果，继续下一个”。</li>
+          </ol>
+          <p>移动端不开放导入入口。ENEX 文件通常较大，逐笔记本确认也更适合 PC 操作。</p>
+        </GuideSection>
+
+        <GuideSection title="时间校验">
+          <p>EdgeEver 会强制保留印象笔记原始创建时间和修改时间：</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>如果 ENEX 中某条笔记缺少合法的创建时间或修改时间，导入会停止。</li>
+            <li>如果 EdgeEver 创建后的 <code>createdAt</code> 或 <code>updatedAt</code> 与 ENEX 原始时间不一致，导入会停止并显示对应笔记标题。</li>
+          </ul>
+        </GuideSection>
+
+        <GuideSection title="命令行导入">
+          <p>命令行脚本适合自托管管理员、开发者和需要批处理的高级用户。普通产品用户优先使用 Web 导入入口。</p>
+          <pre className="overflow-x-auto rounded-md border border-slate-100 bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+            <code>{`bun run cli -- profile set prod --url https://你的域名 --token <api-token>
+bun run import:evernote -- --profile prod --input ./edgeever-import --dry-run
+bun run import:evernote -- --profile prod --input ./edgeever-import`}</code>
+          </pre>
+          <p>API Token 至少需要 <code>read:notebooks</code>、<code>write:notebooks</code>、<code>write:memos</code>。</p>
+        </GuideSection>
+
+        <GuideSection title="常见问题">
+          <GuideFaq
+            question="EdgeEver 为什么不直接支持 .notes？"
+            answer="印象笔记新版 .notes 文件可能包含 encoding=&quot;base64:aes&quot; 加密内容。EdgeEver 无法可靠读取和校验这类文件，因此产品层面只承诺支持 ENEX。"
+          />
+          <GuideFaq
+            question="附件和图片会怎样？"
+            answer="当前导入主要迁移文本内容、标题、标签和时间。ENEX 中的图片和附件会被转换成 evernote-resource:<hash> 形式的占位链接，便于后续定位原始资源。"
+          />
+          <GuideFaq
+            question="笔记格式会完全一致吗？"
+            answer="不会完全一致。工具会把印象笔记的 XHTML 内容转换为 Markdown，再交给 EdgeEver 保存。常规标题、段落、列表、代码块、链接和待办项会尽量保留；复杂表格、加密块、特殊样式和附件需要迁移后抽查。"
+          />
+        </GuideSection>
+      </div>
+    </DialogContent>
+  </Dialog>
+);
+
+const GuideSection = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <section className="space-y-2">
+    <h3 className="text-sm font-bold text-slate-950">{title}</h3>
+    {children}
+  </section>
+);
+
+const GuideFaq = ({ question, answer }: { question: string; answer: string }) => (
+  <div className="rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+    <div className="text-sm font-bold text-slate-900">{question}</div>
+    <p className="mt-1 text-sm leading-6 text-slate-600">{answer}</p>
+  </div>
+);
 
 export const EvernoteImportCard = () => {
   const queryClient = useQueryClient();
@@ -133,6 +231,7 @@ export const EvernoteImportCard = () => {
         <CardTitle className="flex items-center gap-2 text-sm">
           <UploadCloud className="h-4 w-4 text-emerald-700" />
           导入印象笔记
+          <EvernoteImportGuideDialog />
         </CardTitle>
         <CardDescription className="text-xs leading-4">
           按笔记本选择 .enex 文件，EdgeEver 会逐个笔记本导入并保留原始创建、修改时间。
