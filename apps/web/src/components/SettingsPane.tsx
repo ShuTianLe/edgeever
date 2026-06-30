@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
+import { EVERNOTE_MIGRATION_PATH } from "@/lib/routes";
 import { cn, formatDateTime } from "@/lib/utils";
 import { AppConfirmDialog } from "./dialogs/ConfirmDialogs";
 
@@ -135,7 +136,16 @@ const EvernoteImportGuideCard = () => (
         <UploadCloud className="h-4 w-4 text-emerald-700" />
         导入印象笔记
         <Button size="sm" variant="outline" className="h-7 bg-white px-2.5 text-xs" type="button" asChild>
-          <a href="/evernote-migration" target="_blank" rel="noreferrer">
+          <a
+            href={EVERNOTE_MIGRATION_PATH}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="在新标签页打开印象笔记迁移操作指引"
+            onClick={(event) => {
+              event.preventDefault();
+              window.open(EVERNOTE_MIGRATION_PATH, "_blank", "noopener,noreferrer");
+            }}
+          >
             <HelpCircle className="h-3.5 w-3.5" />
             操作指引
           </a>
