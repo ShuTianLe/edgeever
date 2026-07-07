@@ -333,7 +333,16 @@ const MobileTiptapEditorApp = () => {
   }, [persistLocalDraft, saveNow, setSaveStateStable]);
 
   const navigateBack = useCallback(() => {
-    window.location.replace(returnTo);
+    const referrerUrl = document.referrer ? new URL(document.referrer) : null;
+    const canRestorePreviousPage = Boolean(referrerUrl && referrerUrl.origin === window.location.origin && window.history.length > 1);
+
+    if (!canRestorePreviousPage) {
+      window.location.replace(returnTo);
+      return;
+    }
+
+    const currentState = window.history.state as { edgeeverMobileEditorBackGuard?: boolean } | null;
+    window.history.go(currentState?.edgeeverMobileEditorBackGuard ? -2 : -1);
   }, [returnTo]);
 
   const leavePage = useCallback(async () => {
