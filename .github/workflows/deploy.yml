@@ -6,7 +6,9 @@ on:
       - main
     paths-ignore:
       - "apps/site/**"
+      - "apps/mobile/**"
       - ".github/workflows/deploy-site.yml"
+      - ".github/workflows/mobile-build.yml"
   workflow_dispatch:
 
 permissions:
