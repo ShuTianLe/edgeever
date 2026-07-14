@@ -17,6 +17,7 @@ export type MemoUpdateSyncPayload = {
   editSessionId: string;
   title: string;
   contentJson: TiptapDoc;
+  contentMarkdown?: string;
   tags: string[];
 };
 

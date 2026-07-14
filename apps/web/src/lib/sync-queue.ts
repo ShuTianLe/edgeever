@@ -142,6 +142,7 @@ const syncQueueItem = async (item: SyncQueueItem): Promise<MemoDetail> => {
     editSessionId: editSession.id,
     title: item.payload.title,
     contentJson: item.payload.contentJson as TiptapDoc,
+    contentMarkdown: item.payload.contentMarkdown,
     tags: item.payload.tags,
   });
 

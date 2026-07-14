@@ -458,6 +458,11 @@ export const zhCN = {
     codeLanguage: "代码语言",
     plainText: "纯文本",
     horizontalRule: "分割线",
+    markdown: "切换到 Markdown 源码",
+    richText: "切换到富文本编辑",
+    markdownSource: "Markdown 源码",
+    switchToMarkdown: "切换到 Markdown 模式",
+    switchToRichText: "切换到富文本模式",
   },
   mobileNotebookPicker: {
     title: "切换笔记本",

@@ -458,6 +458,11 @@ export const enUS = {
     codeLanguage: "Code language",
     plainText: "Plain text",
     horizontalRule: "Divider",
+    markdown: "Switch to Markdown source",
+    richText: "Switch to rich text",
+    markdownSource: "Markdown source",
+    switchToMarkdown: "Switch to Markdown mode",
+    switchToRichText: "Switch to rich text mode",
   },
   mobileNotebookPicker: {
     title: "Switch notebook",

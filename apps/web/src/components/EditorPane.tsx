@@ -1104,6 +1104,8 @@ const RichEditorPane = ({
   );
   const [isMobileEditing, setIsMobileEditing] = useState(false);
   const [mobilePlainText, setMobilePlainText] = useState("");
+  const [markdownSource, setMarkdownSource] = useState("");
+  const [isMarkdownMode, setIsMarkdownMode] = useState(false);
   const [mobileToolbarOpen, setMobileToolbarOpen] = useState(false);
   const [mobileImeDebugOpen, setMobileImeDebugOpen] = useState(false);
   const [mobileImeDebugActiveElement, setMobileImeDebugActiveElement] = useState(getActiveElementLabel);
@@ -1114,6 +1116,7 @@ const RichEditorPane = ({
   const mobileEditingActive = isMobileEditing || mobileDefaultEditRequested;
   const effectiveReadOnly = readOnly || (isMobileViewport && !mobileEditingActive);
   const useMobilePlainTextEditor = isMobileViewport && mobileEditingActive && !readOnly;
+  const useMarkdownSourceEditor = !useMobilePlainTextEditor && isMarkdownMode;
 
   const memoRef = useRef<MemoDetail | null>(memo);
   const editSessionRef = useRef<MemoEditSession | null>(null);
@@ -1543,11 +1546,15 @@ const RichEditorPane = ({
         memoId: currentMemo.id,
         title: nextTitle,
         tagsText: nextTagsText,
-        contentJson: useMobilePlainTextEditor ? markdownToDoc(nextMobilePlainText) : (currentEditor?.getJSON() as TiptapDoc),
+        contentJson: useMobilePlainTextEditor
+          ? markdownToDoc(nextMobilePlainText)
+          : useMarkdownSourceEditor
+            ? markdownToDoc(markdownSource)
+            : (currentEditor?.getJSON() as TiptapDoc),
         updatedAt: new Date().toISOString(),
       });
     },
-    [getMobilePlainTextValue, tagsText, title, useMobilePlainTextEditor]
+    [getMobilePlainTextValue, markdownSource, tagsText, title, useMarkdownSourceEditor, useMobilePlainTextEditor]
   );
 
   const markDirty = useCallback(() => {
@@ -1572,13 +1579,17 @@ const RichEditorPane = ({
       return markdownToDoc(getMobilePlainTextValue());
     }
 
+    if (useMarkdownSourceEditor) {
+      return markdownToDoc(markdownSource);
+    }
+
     const currentEditor = editorRef.current;
     if (!isEditorReady(currentEditor)) {
       return null;
     }
 
     return currentEditor.getJSON() as TiptapDoc;
-  }, [getMobilePlainTextValue, useMobilePlainTextEditor]);
+  }, [getMobilePlainTextValue, markdownSource, useMarkdownSourceEditor, useMobilePlainTextEditor]);
 
   const currentSnapshot = useCallback(() => {
     const contentJson = getCurrentContentJson();
@@ -1607,6 +1618,8 @@ const RichEditorPane = ({
       setTitle("");
       setTagsText("");
       setMobilePlainText("");
+      setMarkdownSource("");
+      setIsMarkdownMode(false);
       setMobilePlainTextElementValue(mobileTextAreaRef.current, "");
       setSaveState("idle");
       if (isEditorReady(currentEditor)) {
@@ -1656,6 +1669,7 @@ const RichEditorPane = ({
       setTitle(nextTitle);
       setTagsText(nextTagsText);
       setMobilePlainText(nextMarkdown);
+      setMarkdownSource(nextMarkdown);
       setMobilePlainTextElementValue(mobileTextAreaRef.current, nextMarkdown);
 
       if (isEditorReady(currentEditor)) {
@@ -1719,6 +1733,30 @@ const RichEditorPane = ({
     };
   }, [editor, markDirty, memo, persistCurrentDraft]);
 
+  const handleMarkdownModeChange = useCallback(() => {
+    if (effectiveReadOnly || !isEditorReady(editor)) {
+      return;
+    }
+
+    if (isMarkdownMode) {
+      hydratingRef.current = true;
+      editor.commands.setContent(markdownToDoc(markdownSource));
+      setIsMarkdownMode(false);
+      window.setTimeout(() => {
+        hydratingRef.current = false;
+      }, 0);
+      return;
+    }
+
+    setMarkdownSource(docToMarkdown(editor.getJSON() as TiptapDoc));
+    setIsMarkdownMode(true);
+  }, [editor, effectiveReadOnly, isMarkdownMode, markdownSource]);
+
+  const handleMarkdownSourceChange = useCallback((value: string) => {
+    setMarkdownSource(value);
+    markDirty();
+  }, [markDirty]);
+
   useEffect(() => {
     if (!useMobilePlainTextEditor) {
       return;
@@ -1770,6 +1808,7 @@ const RichEditorPane = ({
         editSessionId: editSession.id,
         title,
         contentJson,
+        contentMarkdown: useMarkdownSourceEditor ? markdownSource : undefined,
         tags: parseTagsText(tagsText),
       };
       let data;
@@ -1781,6 +1820,7 @@ const RichEditorPane = ({
           editSessionId: payload.editSessionId,
           title: payload.title,
           contentJson: payload.contentJson,
+          contentMarkdown: payload.contentMarkdown,
           tags: payload.tags,
         });
       } catch (error) {
@@ -2570,7 +2610,14 @@ const RichEditorPane = ({
             </Button>
           </div>
         )}
-        {(!isMobileViewport || (mobileToolbarOpen && !useMobilePlainTextEditor)) && <EditorToolbar editor={editor} readOnly={effectiveReadOnly} />}
+        {(!isMobileViewport || (mobileToolbarOpen && !useMobilePlainTextEditor)) && (
+          <EditorToolbar
+            editor={editor}
+            readOnly={effectiveReadOnly}
+            markdownMode={useMarkdownSourceEditor}
+            onMarkdownModeChange={handleMarkdownModeChange}
+          />
+        )}
       </header>
 
       <div
@@ -2616,6 +2663,16 @@ const RichEditorPane = ({
               </button>
             </div>
           </>
+        ) : useMarkdownSourceEditor ? (
+          <textarea
+            value={markdownSource}
+            onChange={(event) => handleMarkdownSourceChange(event.target.value)}
+            readOnly={effectiveReadOnly}
+            spellCheck={false}
+            aria-label="Markdown 源码"
+            className="block min-h-[300px] h-full w-full resize-none border-0 bg-slate-950 px-4 py-3 font-mono text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-500 sm:px-7"
+            placeholder="# 开始记录"
+          />
         ) : (
           <EditorContent editor={editor} />
         )}

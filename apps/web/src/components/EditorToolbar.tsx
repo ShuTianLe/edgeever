@@ -98,7 +98,17 @@ const toggleCodeBlock = (editor: Editor) => {
     .run();
 };
 
-export const EditorToolbar = ({ editor, readOnly }: { editor: Editor | null; readOnly: boolean }) => {
+export const EditorToolbar = ({
+  editor,
+  readOnly,
+  markdownMode = false,
+  onMarkdownModeChange,
+}: {
+  editor: Editor | null;
+  readOnly: boolean;
+  markdownMode?: boolean;
+  onMarkdownModeChange?: () => void;
+}) => {
   const { t } = useTranslation();
   const editorReady = isToolbarEditorReady(editor);
   const disabled = readOnly || !editorReady;
@@ -179,6 +189,32 @@ export const EditorToolbar = ({ editor, readOnly }: { editor: Editor | null; rea
           role="toolbar"
           aria-label={t("editorToolbar.toolbar")}
         >
+          {onMarkdownModeChange && (
+            <>
+              <button
+                className={cn(
+                  "flex h-8 shrink-0 items-center rounded-md border px-2.5 text-xs font-medium transition disabled:pointer-events-none disabled:opacity-40",
+                  markdownMode
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                )}
+                type="button"
+                title={markdownMode ? t("editorToolbar.richText") : t("editorToolbar.markdown")}
+                aria-label={markdownMode ? t("editorToolbar.richText") : t("editorToolbar.markdown")}
+                aria-pressed={markdownMode}
+                disabled={readOnly}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={onMarkdownModeChange}
+              >
+                {markdownMode ? t("editorToolbar.switchToRichText") : t("editorToolbar.switchToMarkdown")}
+              </button>
+              <ToolbarDivider />
+            </>
+          )}
+          {markdownMode ? (
+            <span className="shrink-0 text-xs text-slate-500">{t("editorToolbar.markdownSource")}</span>
+          ) : (
+            <>
           <Select
             value={blockValue}
             disabled={disabled}
@@ -308,6 +344,8 @@ export const EditorToolbar = ({ editor, readOnly }: { editor: Editor | null; rea
           >
             <Minus className="h-4 w-4" />
           </EditorToolbarButton>
+            </>
+          )}
         </div>
       </div>
     </TooltipProvider>
