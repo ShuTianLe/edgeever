@@ -87,6 +87,29 @@ export type JsonBackupPage = MarkdownExportPage & {
   revisions: JsonBackupRevision[];
 };
 
+export type MobileSyncBootstrapPage = {
+  notebooks: Notebook[];
+  memos: MemoDetail[];
+  snapshotCursor: number;
+  totalCount: number;
+  nextAfterId: string | null;
+};
+
+export type MobileSyncChange = {
+  cursor: number;
+  entityType: "notebook" | "memo";
+  entityId: string;
+  operation: "upsert" | "delete";
+  notebook: Notebook | null;
+  memo: MemoDetail | null;
+};
+
+export type MobileSyncChangesPage = {
+  changes: MobileSyncChange[];
+  cursor: number;
+  hasMore: boolean;
+};
+
 export class ApiRequestError extends Error {
   status: number;
   code?: string;
@@ -174,6 +197,17 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
       }),
 
     listNotebooks: () => request<ListNotebooksResponse>("/api/v1/notebooks"),
+
+    getMobileSyncBootstrapPage: (afterId: string | null = null, limit = 100) => {
+      const search = new URLSearchParams({ limit: String(limit) });
+      if (afterId) {
+        search.set("afterId", afterId);
+      }
+      return request<MobileSyncBootstrapPage>(`/api/v1/sync/bootstrap?${search.toString()}`);
+    },
+
+    getMobileSyncChanges: (cursor: number, limit = 100) =>
+      request<MobileSyncChangesPage>(`/api/v1/sync/changes?cursor=${cursor}&limit=${limit}`),
 
     createNotebook: (payload: { name: string; parentId?: string | null }) =>
       request<NotebookResponse>("/api/v1/notebooks", {

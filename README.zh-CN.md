@@ -96,7 +96,7 @@ Chrome/Edge 网页裁剪插件已开发完成，待上架。
 
 ## 关于客户端
 
-Android App 基于 Expo 与 React Native 构建为真正的原生客户端，直接连接自托管 EdgeEver API，不再把 PWA 嵌入 App。移动工作区使用原生视图实现，优先保障快速启动、流畅列表、缓存内容即时显示、离线草稿和后台同步，同时持续对齐移动 PWA 的功能与视觉语言。
+Android App 基于 Expo 与 React Native 构建为真正的原生客户端，直接连接自托管 EdgeEver API，不再把 PWA 嵌入 App。SQLite 本地镜像会即时提供笔记本、笔记列表、搜索和笔记详情；基于游标的增量同步与离线新建/编辑队列在后台完成云端对账，同时持续对齐移动 PWA 的功能与视觉语言。
 
 桌面端 App 仍在规划中，计划基于 Tauri 构建。
 

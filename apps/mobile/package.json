@@ -1,6 +1,6 @@
 {
   "name": "@edgeever/mobile",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "main": "expo-router/entry",
@@ -28,6 +28,7 @@
     "expo-image-manipulator": "~57.0.5",
     "expo-router": "latest",
     "expo-secure-store": "latest",
+    "expo-sqlite": "~57.0.1",
     "expo-splash-screen": "^57.0.4",
     "expo-status-bar": "latest",
     "react": "19.2.3",

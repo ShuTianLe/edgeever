@@ -116,6 +116,13 @@ type MemoSummaryRow = {
 type MemoListSortMode = "updated-desc" | "created-desc" | "title-asc";
 type MemoListFilterMode = "all" | "tagged" | "untagged" | "pinned";
 
+type MobileSyncChangeRow = {
+  id: number;
+  entity_type: "notebook" | "memo";
+  entity_id: string;
+  operation: "upsert" | "delete";
+};
+
 type MemoListCursor = {
   sort: MemoListSortMode;
   id: string;
@@ -786,6 +793,117 @@ app.get("/api/v1/notebooks", async (c) => {
   ).bind(getWorkspaceId(c)).all<NotebookRow>();
 
   return c.json({ notebooks: rows.results.map(mapNotebook) });
+});
+
+app.get("/api/v1/sync/bootstrap", async (c) => {
+  const denied = requireScopes(c, "read:notebooks", "read:memos");
+
+  if (denied) {
+    return denied;
+  }
+
+  const workspaceId = getWorkspaceId(c);
+  const limit = clampNumber(Number(c.req.query("limit") ?? 100), 1, 200);
+  const afterId = c.req.query("afterId")?.trim() ?? "";
+  const [notebookRows, memoRows, totalRow, cursorRow] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT n.id, n.parent_id, n.name, n.slug, n.icon, n.color, n.sort_order,
+              n.created_at, n.updated_at, COUNT(m.id) AS memo_count, MAX(m.updated_at) AS last_memo_updated_at
+       FROM notebooks n
+       LEFT JOIN memos m ON m.notebook_id = n.id AND m.workspace_id = n.workspace_id AND m.is_deleted = 0
+       WHERE n.workspace_id = ? AND n.is_deleted = 0
+       GROUP BY n.id, n.parent_id, n.name, n.slug, n.icon, n.color, n.sort_order, n.created_at, n.updated_at
+       ORDER BY n.sort_order ASC, n.name ASC`
+    ).bind(workspaceId).all<NotebookRow>(),
+    c.env.DB.prepare(
+      `SELECT m.id, m.notebook_id, m.title, m.excerpt, m.tags_json, m.is_pinned,
+              m.is_archived, m.is_deleted, m.created_at, m.updated_at, m.deleted_at, mc.revision,
+              mc.content_json, mc.content_markdown, mc.content_text, mc.content_hash,
+              m.source_memo_ids, m.merge_source_count, m.merged_into_memo_id
+       FROM memos m
+       INNER JOIN memo_contents mc ON mc.memo_id = m.id
+       WHERE m.workspace_id = ? AND m.id > ?
+       ORDER BY m.id ASC
+       LIMIT ?`
+    ).bind(workspaceId, afterId, limit + 1).all<MemoDetailRow>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS count FROM memos WHERE workspace_id = ?`).bind(workspaceId).first<{ count: number }>(),
+    c.env.DB.prepare(`SELECT COALESCE(MAX(id), 0) AS cursor FROM mobile_sync_changes WHERE workspace_id = ?`).bind(workspaceId).first<{ cursor: number }>(),
+  ]);
+  const page = memoRows.results.slice(0, limit);
+  const totalCount = totalRow?.count ?? page.length;
+  const nextAfterId = memoRows.results.length > limit ? page.at(-1)?.id ?? null : null;
+
+  return c.json({
+    notebooks: notebookRows.results.map(mapNotebook),
+    memos: page.map(mapMemoDetail),
+    snapshotCursor: cursorRow?.cursor ?? 0,
+    totalCount,
+    nextAfterId,
+  });
+});
+
+app.get("/api/v1/sync/changes", async (c) => {
+  const denied = requireScopes(c, "read:notebooks", "read:memos");
+
+  if (denied) {
+    return denied;
+  }
+
+  const workspaceId = getWorkspaceId(c);
+  const cursor = clampNumber(Number(c.req.query("cursor") ?? 0), 0, Number.MAX_SAFE_INTEGER);
+  const limit = clampNumber(Number(c.req.query("limit") ?? 100), 1, 200);
+  const rows = await c.env.DB.prepare(
+    `SELECT id, entity_type, entity_id, operation
+     FROM mobile_sync_changes
+     WHERE workspace_id = ? AND id > ?
+     ORDER BY id ASC
+     LIMIT ?`
+  ).bind(workspaceId, cursor, limit + 1).all<MobileSyncChangeRow>();
+  const page = rows.results.slice(0, limit);
+  const memoIds = Array.from(new Set(page.filter((change) => change.entity_type === "memo" && change.operation === "upsert").map((change) => change.entity_id)));
+  const notebookIds = Array.from(new Set(page.filter((change) => change.entity_type === "notebook" && change.operation === "upsert").map((change) => change.entity_id)));
+  const memoPlaceholders = memoIds.map(() => "?").join(", ");
+  const notebookPlaceholders = notebookIds.map(() => "?").join(", ");
+  const [memoRows, notebookRows] = await Promise.all([
+    memoIds.length > 0
+      ? c.env.DB.prepare(
+          `SELECT m.id, m.notebook_id, m.title, m.excerpt, m.tags_json, m.is_pinned,
+                  m.is_archived, m.is_deleted, m.created_at, m.updated_at, m.deleted_at, mc.revision,
+                  mc.content_json, mc.content_markdown, mc.content_text, mc.content_hash,
+                  m.source_memo_ids, m.merge_source_count, m.merged_into_memo_id
+           FROM memos m
+           INNER JOIN memo_contents mc ON mc.memo_id = m.id
+           WHERE m.workspace_id = ? AND m.id IN (${memoPlaceholders})`
+        ).bind(workspaceId, ...memoIds).all<MemoDetailRow>()
+      : Promise.resolve({ results: [] as MemoDetailRow[] }),
+    notebookIds.length > 0
+      ? c.env.DB.prepare(
+          `SELECT n.id, n.parent_id, n.name, n.slug, n.icon, n.color, n.sort_order,
+                  n.created_at, n.updated_at, COUNT(m.id) AS memo_count, MAX(m.updated_at) AS last_memo_updated_at
+           FROM notebooks n
+           LEFT JOIN memos m ON m.notebook_id = n.id AND m.workspace_id = n.workspace_id AND m.is_deleted = 0
+           WHERE n.workspace_id = ? AND n.is_deleted = 0 AND n.id IN (${notebookPlaceholders})
+           GROUP BY n.id, n.parent_id, n.name, n.slug, n.icon, n.color, n.sort_order, n.created_at, n.updated_at`
+        ).bind(workspaceId, ...notebookIds).all<NotebookRow>()
+      : Promise.resolve({ results: [] as NotebookRow[] }),
+  ]);
+  const memosById = new Map(memoRows.results.map((row) => [row.id, mapMemoDetail(row)]));
+  const notebooksById = new Map(notebookRows.results.map((row) => [row.id, mapNotebook(row)]));
+  const changes = page.map((change) => {
+    if (change.entity_type === "memo") {
+      const memo = change.operation === "upsert" ? memosById.get(change.entity_id) ?? null : null;
+      return { cursor: change.id, entityType: change.entity_type, entityId: change.entity_id, operation: memo ? "upsert" as const : "delete" as const, notebook: null, memo };
+    }
+
+    const notebook = change.operation === "upsert" ? notebooksById.get(change.entity_id) ?? null : null;
+    return { cursor: change.id, entityType: change.entity_type, entityId: change.entity_id, operation: notebook ? "upsert" as const : "delete" as const, notebook, memo: null };
+  });
+
+  return c.json({
+    changes,
+    cursor: page.at(-1)?.id ?? cursor,
+    hasMore: rows.results.length > limit,
+  });
 });
 
 app.post("/api/v1/notebooks", zValidator("json", NotebookCreateSchema), async (c) => {

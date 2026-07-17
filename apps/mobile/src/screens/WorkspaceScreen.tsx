@@ -73,7 +73,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import type { ApiToken, MemoDetail, MemoRevision, MemoSummary, Notebook, ResourceListItem, TagSummary } from "@edgeever/shared";
+import { createExcerpt, docToText, markdownToDoc, type ApiToken, type MemoDetail, type MemoRevision, type MemoSummary, type Notebook, type ResourceListItem, type TagSummary } from "@edgeever/shared";
 import { clearMobileMemoDraft, readMobileMemoDraft, writeMobileMemoDraft } from "../lib/mobile-drafts";
 import {
   readMobileImageCompressionEnabled,
@@ -98,11 +98,22 @@ import {
   getMobileSyncRetryDelay,
   listMobileSyncQueueItems,
   loadMobileSyncQueueSummary,
+  queueMobileMemoCreate,
   queueMobileMemoUpdate,
   syncMobileQueuedChanges,
   type MobileSyncQueueItem,
   type MobileSyncQueueSummary,
 } from "../lib/sync-queue";
+import {
+  createMobileDataScope,
+  getLocalMemo,
+  listLocalMemos,
+  listLocalNotebooks,
+  replaceLocalMemoId,
+  resolveLocalMemo,
+  syncMobileLocalMirror,
+  upsertLocalMemo,
+} from "../lib/local-mirror";
 import { AccountSecurityModal } from "./AccountSecurityModal";
 import { getStartupPerformanceItems, markStartup } from "../lib/startup-performance";
 
@@ -298,6 +309,7 @@ export const WorkspaceScreen = () => {
   const { client, session, signOut } = useSession();
   const queryClient = useQueryClient();
   const syncQueueScope = session?.baseUrl ?? "";
+  const dataScope = createMobileDataScope(session?.baseUrl ?? "", session?.user?.id);
   const [activeView, setActiveView] = useState<MobileView>("notes");
   const [activeNotebookId, setActiveNotebookId] = useState<string>(ALL_NOTES_ID);
   const [memoView, setMemoView] = useState<MemoView>("notebook");
@@ -344,7 +356,12 @@ export const WorkspaceScreen = () => {
         throw new Error("Client is not ready");
       }
 
-      return client.listNotebooks();
+      let local = await listLocalNotebooks(dataScope);
+      if (local.notebooks.length === 0) {
+        await syncMobileLocalMirror(client, dataScope);
+        local = await listLocalNotebooks(dataScope);
+      }
+      return local;
     },
     enabled: Boolean(client),
   });
@@ -359,7 +376,7 @@ export const WorkspaceScreen = () => {
         throw new Error("Client is not ready");
       }
 
-      return client.listMemos({
+      return listLocalMemos(dataScope, {
         notebookId: activeNotebookId === ALL_NOTES_ID ? null : activeNotebookId,
         filter: memoFilterMode,
         limit: 50,
@@ -378,7 +395,7 @@ export const WorkspaceScreen = () => {
         throw new Error("Client is not ready");
       }
 
-      return client.listMemos({
+      return listLocalMemos(dataScope, {
         q: debouncedSearchText,
         limit: 50,
         sort: "updated-desc",
@@ -395,7 +412,13 @@ export const WorkspaceScreen = () => {
         throw new Error("Memo is not selected");
       }
 
-      return client.getMemo(selectedMemoId, { includeDeleted: memoView === "trash" });
+      const local = await getLocalMemo(dataScope, selectedMemoId);
+      if (local) {
+        return { memo: local };
+      }
+      const response = await client.getMemo(selectedMemoId, { includeDeleted: memoView === "trash" });
+      await upsertLocalMemo(dataScope, response.memo);
+      return response;
     },
     enabled: Boolean(client && selectedMemoId),
   });
@@ -413,6 +436,9 @@ export const WorkspaceScreen = () => {
   }, [memosQuery.data, notebooksQuery.data]);
 
   const refresh = async () => {
+    if (client) {
+      await syncMobileLocalMirror(client, dataScope);
+    }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["mobile", "notebooks"] }),
       queryClient.invalidateQueries({ queryKey: ["mobile", "memos"] }),
@@ -621,6 +647,9 @@ export const WorkspaceScreen = () => {
   };
 
   const invalidateWorkspace = async () => {
+    if (client) {
+      await syncMobileLocalMirror(client, dataScope);
+    }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["mobile", "notebooks"] }),
       queryClient.invalidateQueries({ queryKey: ["mobile", "memos"] }),
@@ -659,12 +688,13 @@ export const WorkspaceScreen = () => {
 
   const localUpdateMemoMutation = useMutation({
     mutationFn: async ({ memo, payload }: { memo: MemoDetail; payload: { title?: string; contentMarkdown?: string; isPinned?: boolean; notebookId?: string; tags?: string[] } }) => {
-      const optimisticMemo = createOptimisticMemo(memo, payload);
+      const syncBaseMemo = await resolveLocalMemo(dataScope, memo.id) ?? memo;
+      const optimisticMemo = createOptimisticMemo(syncBaseMemo, payload);
 
       await queueMobileMemoUpdate(syncQueueScope, {
-        memoId: memo.id,
-        expectedRevision: memo.revision,
-        expectedContentHash: memo.contentHash,
+        memoId: syncBaseMemo.id,
+        expectedRevision: syncBaseMemo.revision,
+        expectedContentHash: syncBaseMemo.contentHash,
         title: optimisticMemo.title?.trim() || DEFAULT_MEMO_TITLE,
         contentMarkdown: optimisticMemo.contentMarkdown,
         notebookId: optimisticMemo.notebookId,
@@ -674,6 +704,7 @@ export const WorkspaceScreen = () => {
       return optimisticMemo;
     },
     onSuccess: async (memo, variables) => {
+      await upsertLocalMemo(dataScope, memo);
       applyOptimisticMemoToCache(queryClient, variables.memo, memo);
       setSyncQueueSummary(await loadMobileSyncQueueSummary(syncQueueScope));
       setSyncQueueMessage("已保存到本地，正在后台同步");
@@ -888,7 +919,14 @@ export const WorkspaceScreen = () => {
 
     try {
       const result = await syncMobileQueuedChanges(client, syncQueueScope, {
-        onSynced: async (memo) => {
+        onSynced: async (memo, item) => {
+          if (item.kind === "memo.create") {
+            await replaceLocalMemoId(dataScope, item.memoId, memo);
+            setSelectedMemoId((current) => current === item.memoId ? memo.id : current);
+            setEditingMemo((current) => current?.id === item.memoId ? memo : current);
+          } else {
+            await upsertLocalMemo(dataScope, memo);
+          }
           queryClient.setQueryData(["mobile", "memo", "notebook", memo.id], { memo });
           queryClient.setQueryData(["mobile", "memo", "trash", memo.id], { memo });
         },
@@ -937,7 +975,14 @@ export const WorkspaceScreen = () => {
 
     try {
       const result = await syncMobileQueuedChanges(client, syncQueueScope, {
-        onSynced: async (memo) => {
+        onSynced: async (memo, item) => {
+          if (item.kind === "memo.create") {
+            await replaceLocalMemoId(dataScope, item.memoId, memo);
+            setSelectedMemoId((current) => current === item.memoId ? memo.id : current);
+            setEditingMemo((current) => current?.id === item.memoId ? memo : current);
+          } else {
+            await upsertLocalMemo(dataScope, memo);
+          }
           queryClient.setQueryData(["mobile", "memo", "notebook", memo.id], { memo });
           queryClient.setQueryData(["mobile", "memo", "trash", memo.id], { memo });
         },
@@ -990,6 +1035,37 @@ export const WorkspaceScreen = () => {
       }
     };
   }, [client, syncQueueScope]);
+
+  useEffect(() => {
+    if (!client) {
+      return;
+    }
+    let active = true;
+    const syncMirror = async () => {
+      try {
+        await syncMobileLocalMirror(client, dataScope);
+        if (active) {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["mobile", "notebooks"] }),
+            queryClient.invalidateQueries({ queryKey: ["mobile", "memos"] }),
+            queryClient.invalidateQueries({ queryKey: ["mobile", "search"] }),
+          ]);
+        }
+      } catch {
+        // The local mirror remains readable while the device is offline.
+      }
+    };
+    void syncMirror();
+    const subscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+      if (nextState === "active") {
+        void syncMirror();
+      }
+    });
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, [client, dataScope, queryClient]);
 
   return (
     <MobileLocaleContext.Provider value={localePreference}>
@@ -1155,6 +1231,7 @@ export const WorkspaceScreen = () => {
 
       {createOpen ? <CreateMemoModal
         activeNotebookId={activeNotebookId}
+        dataScope={dataScope}
         notebooks={notebooks}
         onClose={() => setCreateOpen(false)}
         onCreated={(memo) => {
@@ -1162,9 +1239,17 @@ export const WorkspaceScreen = () => {
           setActiveView("notes");
           setMemoView("notebook");
           setActiveNotebookId(memo.notebookId);
-          setSelectedMemoId(null);
-          setRichEditingMemo(memo);
+          setSelectedMemoId(memo.id);
+          if (!memo.id.startsWith("local:")) {
+            setRichEditingMemo(memo);
+          }
         }}
+        onQueued={async () => {
+          setSyncQueueSummary(await loadMobileSyncQueueSummary(syncQueueScope));
+          setSyncQueueMessage("已保存到本地，正在后台同步");
+          void runAutomaticSync();
+        }}
+        syncQueueScope={syncQueueScope}
         visible
       /> : null}
 
@@ -2021,18 +2106,23 @@ const SettingsView = ({
 
 const CreateMemoModal = ({
   activeNotebookId,
+  dataScope,
   notebooks,
   onClose,
   onCreated,
+  onQueued,
+  syncQueueScope,
   visible,
 }: {
   activeNotebookId: string;
+  dataScope: string;
   notebooks: Notebook[];
   onClose: () => void;
   onCreated: (memo: MemoDetail) => void;
+  onQueued: () => void | Promise<void>;
+  syncQueueScope: string;
   visible: boolean;
 }) => {
-  const { client } = useSession();
   const queryClient = useQueryClient();
   const fallbackNotebookId = activeNotebookId !== ALL_NOTES_ID ? activeNotebookId : notebooks[0]?.id ?? "";
   const [notebookId, setNotebookId] = useState(fallbackNotebookId);
@@ -2051,22 +2141,45 @@ const CreateMemoModal = ({
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      if (!client) {
-        throw new Error("Client is not ready");
-      }
-
       if (!targetNotebookId) {
         throw new Error("请先创建一个笔记本");
       }
-
-      const response = await client.createMemo({
+      const now = new Date().toISOString();
+      const temporaryId = `local:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
+      const markdown = contentMarkdown.trim();
+      const contentJson = markdownToDoc(markdown);
+      const contentText = docToText(contentJson);
+      const memo: MemoDetail = {
+        id: temporaryId,
         notebookId: targetNotebookId,
         title: title.trim() || DEFAULT_MEMO_TITLE,
+        excerpt: createExcerpt(contentText),
         tags: parseTags(tagsText),
-        contentMarkdown: contentMarkdown.trim(),
+        isPinned: false,
+        isArchived: false,
+        isDeleted: false,
+        revision: 0,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        contentJson,
+        contentMarkdown: markdown,
+        contentText,
+        contentHash: `local:${temporaryId}`,
+        sourceMemoIds: [],
+        mergeSourceCount: 0,
+        mergedIntoMemoId: null,
+      };
+      await upsertLocalMemo(dataScope, memo);
+      await queueMobileMemoCreate(syncQueueScope, {
+        memoId: temporaryId,
+        notebookId: memo.notebookId,
+        title: memo.title ?? DEFAULT_MEMO_TITLE,
+        contentMarkdown: memo.contentMarkdown,
+        tags: memo.tags,
+        createdAt: now,
       });
-
-      return response.memo;
+      return memo;
     },
     onSuccess: async (memo) => {
       await Promise.all([
@@ -2076,6 +2189,7 @@ const CreateMemoModal = ({
       setTitle("");
       setTagsText("");
       setContentMarkdown("");
+      await onQueued();
       onCreated(memo);
     },
   });
@@ -5654,7 +5768,7 @@ const applyOptimisticMemoToCache = (queryClient: QueryClient, previousMemo: Memo
 
   for (const query of detailQueries) {
     const data = query.state.data as { memo?: MemoDetail } | undefined;
-    if (data?.memo?.id === nextMemo.id) {
+    if (data?.memo?.id === nextMemo.id || data?.memo?.id === previousMemo.id) {
       queryClient.setQueryData(query.queryKey, { ...data, memo: nextMemo });
     }
   }
@@ -5669,7 +5783,7 @@ const applyOptimisticMemoToCache = (queryClient: QueryClient, previousMemo: Memo
 
     const previouslyMatched = memoMatchesListQuery(previousMemo, query.queryKey);
     const nextMatches = memoMatchesListQuery(nextMemo, query.queryKey);
-    const withoutMemo = data.memos.filter((memo) => memo.id !== nextMemo.id);
+    const withoutMemo = data.memos.filter((memo) => memo.id !== nextMemo.id && memo.id !== previousMemo.id);
     const memos = nextMatches ? sortMemoSummaries([nextMemo, ...withoutMemo], query.queryKey[5]).slice(0, 50) : withoutMemo;
     const totalCount = Math.max(0, (data.totalCount ?? data.memos.length) + (nextMatches ? 1 : 0) - (previouslyMatched ? 1 : 0));
 
@@ -5679,10 +5793,10 @@ const applyOptimisticMemoToCache = (queryClient: QueryClient, previousMemo: Memo
   const searchQueries = queryClient.getQueryCache().findAll({ queryKey: ["mobile", "search"] });
   for (const query of searchQueries) {
     const data = query.state.data as { memos?: MemoSummary[] } | undefined;
-    if (data?.memos?.some((memo) => memo.id === nextMemo.id)) {
+    if (data?.memos?.some((memo) => memo.id === nextMemo.id || memo.id === previousMemo.id)) {
       queryClient.setQueryData(query.queryKey, {
         ...data,
-        memos: data.memos.map((memo) => (memo.id === nextMemo.id ? nextMemo : memo)),
+        memos: data.memos.map((memo) => (memo.id === nextMemo.id || memo.id === previousMemo.id ? nextMemo : memo)),
       });
     }
   }
