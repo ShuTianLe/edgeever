@@ -45,7 +45,7 @@ The public demo resets every Monday at 1:00 AM (China Standard Time) and restore
 - Batch note moving, notebook drag sorting, and hierarchy editing.
 - Offline drafts and local sync queue for existing notes.
 - Multi-user instances with isolated personal workspaces, owner-managed accounts, and PBKDF2-SHA256 password hashing.
-- Chrome/Edge web clipper is complete and currently under store review.
+- Chrome/Edge web clipper is officially published on the [Chrome Web Store](https://chromewebstore.google.com/detail/edgeever-web-clipper/gjadpfmanienmlofajibkfkkpfdkclgo).
 - Support installing as a PWA app for a native-like experience on PC and mobile; the native mobile App (iOS / Android) is complete and under store review, with the Android APK available on the GitHub Releases page for immediate download.
 
 ## Deployment
@@ -94,7 +94,9 @@ EdgeEver can be installed as a PWA on desktop or mobile home screens. On desktop
 
 ## Chrome/Edge Web Clipper
 
-The Chrome/Edge web clipper is complete and currently under store review.
+The Chrome/Edge web clipper is officially published. You can install it directly from the link below (Microsoft Edge users can also install directly from the Chrome Web Store):
+
+- [Chrome Web Store Link](https://chromewebstore.google.com/detail/edgeever-web-clipper/gjadpfmanienmlofajibkfkkpfdkclgo)
 
 ## Native Clients
 
