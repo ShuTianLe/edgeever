@@ -10,13 +10,6 @@ let mermaidRenderSequence = 0;
 const loadMermaid = () => {
   if (!mermaidModulePromise) {
     mermaidModulePromise = import("mermaid").then(({ default: mermaid }) => {
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-        suppressErrorRendering: true,
-        theme: "neutral",
-      });
-
       return mermaid;
     });
   }
@@ -30,6 +23,7 @@ export const MermaidCodeBlock = ({ editor, node }: NodeViewProps) => {
   const source = node.textContent.trim();
   const isMermaid = language === "mermaid";
   const [svg, setSvg] = useState("");
+  const [sourceVisible, setSourceVisible] = useState(false);
   const [renderState, setRenderState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
   useEffect(() => {
@@ -45,6 +39,31 @@ export const MermaidCodeBlock = ({ editor, node }: NodeViewProps) => {
 
       void loadMermaid()
         .then(async (mermaid) => {
+          const dark = document.documentElement.classList.contains("dark");
+          const ink = dark ? "#cbd5e1" : "#26384a";
+          const surface = dark ? "#0f172a" : "#ffffff";
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: "strict",
+            suppressErrorRendering: true,
+            theme: "base",
+            themeVariables: {
+              background: "transparent",
+              primaryColor: surface,
+              primaryTextColor: ink,
+              primaryBorderColor: ink,
+              lineColor: ink,
+              textColor: ink,
+              mainBkg: surface,
+              nodeBorder: ink,
+              edgeLabelBackground: surface,
+              actorBkg: surface,
+              actorBorder: ink,
+              actorTextColor: ink,
+              signalColor: ink,
+              signalTextColor: ink,
+            },
+          });
           const valid = await mermaid.parse(source, { suppressErrors: true });
           if (!valid) {
             throw new Error("Invalid Mermaid diagram");
@@ -75,11 +94,28 @@ export const MermaidCodeBlock = ({ editor, node }: NodeViewProps) => {
 
   return (
     <NodeViewWrapper
-      className={isMermaid ? "edgeever-mermaid-code-block" : "edgeever-code-block"}
+      className={isMermaid
+        ? `edgeever-mermaid-code-block${sourceVisible ? " is-source-visible" : ""}`
+        : "edgeever-code-block"}
       data-language={language}
     >
       {isMermaid && (
-        <div className="edgeever-mermaid-preview" contentEditable={false}>
+        <div
+          className="edgeever-mermaid-preview"
+          contentEditable={false}
+          onClick={() => editor.isEditable && setSourceVisible((visible) => !visible)}
+          onKeyDown={(event) => {
+            if (editor.isEditable && (event.key === "Enter" || event.key === " ")) {
+              event.preventDefault();
+              setSourceVisible((visible) => !visible);
+            }
+          }}
+          aria-label={editor.isEditable
+            ? `${t("editorToolbar.mermaidPreview")} · ${t("editorToolbar.mermaidSource")}`
+            : undefined}
+          role={editor.isEditable ? "button" : undefined}
+          tabIndex={editor.isEditable ? 0 : undefined}
+        >
           {!source && <p className="edgeever-mermaid-message">{t("editorToolbar.mermaidEmpty")}</p>}
           {source && renderState === "loading" && !svg && (
             <p className="edgeever-mermaid-message">{t("editorToolbar.mermaidRendering")}</p>

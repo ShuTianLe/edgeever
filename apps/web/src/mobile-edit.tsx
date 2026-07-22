@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { MobileStandaloneTiptapEditor } from "@/components/MobileStandaloneTiptapEditor";
 import { initializeTheme } from "@/components/ThemeProvider";
+import "./i18n";
 import "./styles/mobile-markdown-editor.css";
 
 const root = document.getElementById("mobile-editor-root");

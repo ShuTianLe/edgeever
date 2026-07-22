@@ -104,7 +104,8 @@ const MermaidRenderRuntime = (props: MermaidRendererProps) => {
         startOnLoad: false,
         securityLevel: "strict",
         suppressErrorRendering: true,
-        theme: props.theme === "dark" ? "dark" : "neutral",
+        theme: "base",
+        themeVariables: getMobileMermaidThemeVariables(props.theme),
         flowchart: { htmlLabels: false },
       });
 
@@ -748,6 +749,27 @@ const applyImageWidth = (
 
 let mermaidRenderSequence = 0;
 
+const getMobileMermaidThemeVariables = (theme: "light" | "dark") => {
+  const ink = theme === "dark" ? "#cbd5e1" : "#26384a";
+  const surface = theme === "dark" ? "#0f172a" : "#ffffff";
+  return {
+    background: "transparent",
+    primaryColor: surface,
+    primaryTextColor: ink,
+    primaryBorderColor: ink,
+    lineColor: ink,
+    textColor: ink,
+    mainBkg: surface,
+    nodeBorder: ink,
+    edgeLabelBackground: surface,
+    actorBkg: surface,
+    actorBorder: ink,
+    actorTextColor: ink,
+    signalColor: ink,
+    signalTextColor: ink,
+  };
+};
+
 const loadMermaid = () => {
   const mermaid = (globalThis as typeof globalThis & {
     mermaid?: typeof import("mermaid")["default"];
@@ -772,6 +794,15 @@ const createMobileCodeBlockExtension = (
       const code = document.createElement("code");
       preview.contentEditable = "false";
       preview.className = "edgeever-mermaid-preview";
+      preview.tabIndex = 0;
+      preview.setAttribute("role", "button");
+      preview.addEventListener("click", () => wrapper.classList.toggle("is-source-visible"));
+      preview.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          wrapper.classList.toggle("is-source-visible");
+        }
+      });
       message.className = "edgeever-mermaid-message";
       svgContainer.className = "edgeever-mermaid-svg";
       svgContainer.setAttribute("role", "img");
@@ -827,7 +858,8 @@ const createMobileCodeBlockExtension = (
                 startOnLoad: false,
                 securityLevel: "strict",
                 suppressErrorRendering: true,
-                theme: theme === "dark" ? "dark" : "neutral",
+                theme: "base",
+                themeVariables: getMobileMermaidThemeVariables(theme),
               });
               const valid = await mermaid.parse(source, { suppressErrors: true });
               if (!valid) {
@@ -1275,12 +1307,13 @@ const getEditorStyles = (theme: "light" | "dark") => `
   .edgeever-editor-content pre { overflow-x: auto; border-radius: 10px; padding: 14px; background: #0f172a; color: #e2e8f0; }
   .edgeever-editor-content code { border-radius: 4px; padding: 2px 4px; background: ${theme === "dark" ? "#1e293b" : "#f1f5f9"}; }
   .edgeever-editor-content pre code { padding: 0; background: transparent; }
-  .edgeever-mermaid-code-block { margin: 18px 0; overflow: hidden; border: 1px solid ${theme === "dark" ? "#334155" : "#e2e8f0"}; border-radius: 12px; background: ${theme === "dark" ? "#111827" : "#fff"}; }
-  .edgeever-mermaid-code-block > pre { margin: 0; border-radius: 0; border-top: 1px solid ${theme === "dark" ? "#334155" : "#e2e8f0"}; }
-  .edgeever-mermaid-preview { display: flex; min-height: 116px; align-items: center; justify-content: center; overflow-x: auto; padding: 14px; background: ${theme === "dark" ? "#0f172a" : "#fff"}; }
+  .edgeever-mermaid-code-block { margin: 18px 0; overflow: visible; background: transparent; }
+  .edgeever-mermaid-code-block > pre { display: none; margin: 8px 0 0; }
+  .edgeever-mermaid-code-block.is-source-visible > pre { display: block; }
+  .edgeever-mermaid-preview { display: flex; min-height: 104px; align-items: center; justify-content: center; overflow-x: auto; padding: 16px 4px; background: transparent; }
   .edgeever-mermaid-preview[hidden] { display: none; }
   .edgeever-mermaid-svg { width: 100%; text-align: center; }
-  .edgeever-mermaid-svg svg { display: block; width: 100%; max-width: 100%; height: auto; max-height: 420px; margin: auto; }
+  .edgeever-mermaid-svg svg { display: block; width: auto; max-width: 100%; height: auto; max-height: 440px; margin: auto; }
   .edgeever-mermaid-message, .edgeever-mermaid-error { margin: 0; font-size: 14px; line-height: 1.5; text-align: center; }
   .edgeever-mermaid-message { color: ${theme === "dark" ? "#94a3b8" : "#64748b"}; }
   .edgeever-mermaid-error { color: ${theme === "dark" ? "#fda4af" : "#be123c"}; }

@@ -279,20 +279,19 @@ textarea {
 }
 
 .ProseMirror .edgeever-mermaid-code-block {
-  overflow: hidden;
-  border: 1px solid #d9eadf;
-  border-radius: 10px;
-  background: #fff;
+  overflow: visible;
+  background: transparent;
 }
 
 .ProseMirror .edgeever-mermaid-preview {
   display: flex;
-  min-height: 8rem;
+  min-height: 6rem;
   align-items: center;
   justify-content: center;
   overflow-x: auto;
-  padding: 1rem;
-  background: #fff;
+  padding: 1.25rem 0.5rem;
+  background: transparent;
+  cursor: pointer;
 }
 
 .ProseMirror .edgeever-mermaid-message,
@@ -314,14 +313,19 @@ textarea {
 
 .ProseMirror .edgeever-mermaid-svg svg {
   display: block;
+  width: auto;
   max-width: 100%;
   height: auto;
+  max-height: 30rem;
 }
 
 .ProseMirror .edgeever-mermaid-source {
-  border: 0;
-  border-top: 1px solid #d9eadf;
-  border-radius: 0;
+  display: none;
+  margin-top: 0.5rem;
+}
+
+.ProseMirror .edgeever-mermaid-code-block.is-source-visible .edgeever-mermaid-source {
+  display: block;
 }
 
 /* Highlight.js-compatible token classes emitted by Tiptap/lowlight. */
@@ -867,8 +871,7 @@ textarea {
 }
 
 :root.dark .ProseMirror .edgeever-mermaid-code-block {
-  border-color: #166534;
-  background: #13261a;
+  background: transparent;
 }
 
 :root.dark .ProseMirror .edgeever-code-source {
@@ -878,11 +881,7 @@ textarea {
 }
 
 :root.dark .ProseMirror .edgeever-mermaid-preview {
-  background: #f8fafc;
-}
-
-:root.dark .ProseMirror .edgeever-mermaid-source {
-  border-top-color: #166534;
+  background: transparent;
 }
 
 :root.dark .markdown-content {

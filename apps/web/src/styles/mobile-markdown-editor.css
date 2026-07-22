@@ -494,6 +494,69 @@ input {
   margin: 1.2rem 0;
 }
 
+.edgeever-mobile-tiptap-content .edgeever-code-source {
+  overflow-x: auto;
+  border: 1px solid #d9eadf;
+  border-radius: 8px;
+  background: #f7fbf8;
+  padding: 0.9rem 1rem;
+  color: #1e293b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.875em;
+  white-space: pre;
+}
+
+.edgeever-mobile-tiptap-content .edgeever-mermaid-code-block {
+  margin: 18px 0;
+  overflow: visible;
+  background: transparent;
+}
+
+.edgeever-mobile-tiptap-content .edgeever-mermaid-preview {
+  display: flex;
+  min-height: 6rem;
+  align-items: center;
+  justify-content: center;
+  overflow-x: auto;
+  padding: 1rem 0.25rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.edgeever-mobile-tiptap-content .edgeever-mermaid-svg {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+}
+
+.edgeever-mobile-tiptap-content .edgeever-mermaid-svg svg {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 440px;
+}
+
+.edgeever-mobile-tiptap-content .edgeever-mermaid-source {
+  display: none;
+  margin-top: 0.5rem;
+}
+
+.edgeever-mobile-tiptap-content .edgeever-mermaid-code-block.is-source-visible .edgeever-mermaid-source {
+  display: block;
+}
+
+.edgeever-mobile-tiptap-content .edgeever-mermaid-message,
+.edgeever-mobile-tiptap-content .edgeever-mermaid-error {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.edgeever-mobile-tiptap-content .edgeever-mermaid-error {
+  color: #be123c;
+}
+
 .edgeever-mobile-tiptap-content img {
   height: auto;
   max-width: 100%;
@@ -585,6 +648,12 @@ input {
 :root.dark .edgeever-mobile-tiptap-content th {
   background: #27303f;
   color: #f8fafc;
+}
+
+:root.dark .edgeever-mobile-tiptap-content .edgeever-code-source {
+  border-color: #166534;
+  background: #13261a;
+  color: #cbd5e1;
 }
 
 :root.dark .edgeever-mobile-tiptap-content .tableWrapper {

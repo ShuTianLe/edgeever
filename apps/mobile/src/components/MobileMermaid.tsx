@@ -107,8 +107,8 @@ export const MobileMermaidDiagram = ({
   }
 
   const aspectRatio = getMermaidSvgAspectRatio(svg);
-  const availableWidth = Math.max(1, width - 48);
-  const height = Math.min(420, Math.max(120, availableWidth / aspectRatio));
+  const availableWidth = Math.max(1, width - 32);
+  const height = Math.min(440, Math.max(120, availableWidth / aspectRatio));
   return (
     <View accessibilityLabel={locale === "en-US" ? "Mermaid diagram" : "Mermaid 图表"} accessible style={[styles.diagram, theme === "dark" && styles.diagramDark, { height }]}>
       <SvgXml height="100%" width="100%" xml={svg} />
@@ -119,16 +119,11 @@ export const MobileMermaidDiagram = ({
 const styles = StyleSheet.create({
   diagram: {
     width: "100%",
-    marginVertical: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 10,
-    backgroundColor: "#ffffff",
+    marginVertical: 14,
+    backgroundColor: "transparent",
   },
   diagramDark: {
-    borderColor: "#334155",
-    backgroundColor: "#0f172a",
+    backgroundColor: "transparent",
   },
   error: {
     marginVertical: 10,
