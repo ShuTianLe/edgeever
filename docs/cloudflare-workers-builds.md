@@ -37,7 +37,7 @@ Never commit or share this token.
 
 ### Deployment API token
 
-If the command reports that no deployment API token is available, open **Worker** -> **Settings** -> **Builds** -> **API token** and create or select one that can deploy the Worker and update D1 and R2, then rerun the command. When several are available, select one by name in the terminal.
+If the command reports that no deployment API token is available, open **Worker** -> **Settings** -> **Builds** -> **API token** and create or select one that can deploy the Worker and update D1 and the Workers KV binding, then rerun the command. When several are available, select one by name in the terminal.
 
 ## Updates and Troubleshooting
 

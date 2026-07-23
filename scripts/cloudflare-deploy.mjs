@@ -1,11 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runWranglerSync } from "./wrangler-runner.mjs";
 
 const PLACEHOLDER_D1_ID = "00000000-0000-0000-0000-000000000000";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PLACEHOLDER_KV_ID = "00000000000000000000000000000000";
+const KV_ID_PATTERN = /^[0-9a-f]{32}$/i;
 const PASSWORD_HASH_PATTERN = /^pbkdf2-sha256\$100000\$[^$]+\$[^$]+$/;
 
 const command = process.argv[2] ?? "doctor";
@@ -87,6 +89,7 @@ const upsertEnv = (key, value) => {
     : `${content.trimEnd()}\n${key}=${fileValue}\n`;
 
   writeFileSync(envPath, next.startsWith("\n") ? next.slice(1) : next);
+  chmodSync(envPath, 0o600);
   process.env[key] = value;
 };
 
@@ -142,10 +145,12 @@ const ensureCloudflareAuth = () => {
 
 const ensureEnvLocal = () => {
   if (existsSync(envPath)) {
+    chmodSync(envPath, 0o600);
     return;
   }
 
   copyFileSync(envExamplePath, envPath);
+  chmodSync(envPath, 0o600);
   console.log("[ok] created .env.local from .env.local.example");
 };
 
@@ -176,6 +181,22 @@ const findD1DatabaseId = (databaseName) => {
   }
 };
 
+const listD1Databases = () => {
+  const result = runWrangler(["d1", "list", "--json"]);
+  if (result.status !== 0) {
+    printCommandFailure(result);
+    return null;
+  }
+
+  try {
+    const databases = JSON.parse(result.stdout);
+    return Array.isArray(databases) ? databases : null;
+  } catch {
+    console.error(String(result.stdout).trim());
+    return null;
+  }
+};
+
 const ensureD1 = (values) => {
   const currentId = envValue("D1_DATABASE_ID", values);
   if (currentId && currentId !== PLACEHOLDER_D1_ID) {
@@ -185,9 +206,11 @@ const ensureD1 = (values) => {
   const databaseName = envValue("D1_DATABASE_NAME", values) || "edgeever";
   const existingId = findD1DatabaseId(databaseName);
   if (existingId) {
-    upsertEnv(targetKey("D1_DATABASE_ID", values), existingId);
-    console.log(`[ok] reused D1 database ${databaseName}`);
-    return true;
+    return check(
+      "D1 database name collision",
+      false,
+      `${databaseName} already exists; set ${targetKey("D1_DATABASE_ID", values)}=${existingId} only after verifying ownership`,
+    );
   }
 
   const result = runWrangler(["d1", "create", databaseName]);
@@ -208,21 +231,73 @@ const ensureD1 = (values) => {
   return true;
 };
 
-const ensureR2 = (values, name) => {
-  const bucketName = envValue(name, values);
-  if (!bucketName) {
-    return name === "R2_PREVIEW_BUCKET_NAME" || check(`${name}`, false, "missing bucket name");
+const listKvNamespaces = () => {
+  const result = runWrangler(["kv", "namespace", "list"]);
+  if (result.status !== 0) {
+    printCommandFailure(result);
+    return null;
   }
 
-  const result = runWrangler(["r2", "bucket", "create", bucketName]);
-  const output = `${result.stdout}\n${result.stderr}`.trim();
-  if (result.status === 0 || /already exists|binding already exists|bucket.+exists/i.test(output)) {
-    console.log(`[ok] R2 bucket ${bucketName}`);
-    return true;
+  try {
+    const namespaces = JSON.parse(result.stdout);
+    return Array.isArray(namespaces) ? namespaces : null;
+  } catch {
+    console.error(String(result.stdout).trim());
+    return null;
+  }
+};
+
+const ensureKvNamespace = (values, nameKey, idKey) => {
+  const namespaceName = envValue(nameKey, values);
+  const configuredId = envValue(idKey, values);
+  if (!namespaceName) {
+    return check(nameKey, false, "missing namespace name");
   }
 
-  console.error(output);
-  return check(`create R2 bucket ${bucketName}`, false);
+  if (configuredId && configuredId !== PLACEHOLDER_KV_ID && !KV_ID_PATTERN.test(configuredId)) {
+    return check(idKey, false, "invalid KV namespace ID");
+  }
+
+  const namespaces = listKvNamespaces();
+  if (!namespaces) {
+    return check("list KV namespaces", false);
+  }
+
+  if (configuredId && configuredId !== PLACEHOLDER_KV_ID) {
+    const configured = namespaces.find((namespace) => namespace?.id === configuredId);
+    return check(
+      `KV namespace ${namespaceName}`,
+      configured?.title === namespaceName,
+      configured?.title === namespaceName
+        ? configuredId
+        : "configured ID does not match an existing namespace with the expected name",
+    );
+  }
+
+  const existing = namespaces.find((namespace) => namespace?.title === namespaceName);
+  if (existing?.id) {
+    return check(
+      "KV namespace name collision",
+      false,
+      `${namespaceName} already exists; set ${targetKey(idKey, values)}=${existing.id} only after verifying ownership`,
+    );
+  }
+
+  const result = runWrangler(["kv", "namespace", "create", namespaceName]);
+  if (result.status !== 0) {
+    printCommandFailure(result);
+    return check(`create KV namespace ${namespaceName}`, false);
+  }
+
+  const createdNamespaces = listKvNamespaces();
+  const created = createdNamespaces?.find((namespace) => namespace?.title === namespaceName);
+  if (!created?.id || !KV_ID_PATTERN.test(created.id)) {
+    return check(`read KV namespace ${namespaceName}`, false, "could not resolve created namespace ID");
+  }
+
+  upsertEnv(targetKey(idKey, values), created.id);
+  console.log(`[ok] created KV namespace ${namespaceName}`);
+  return true;
 };
 
 const ensureAuthPassword = (values) => {
@@ -259,6 +334,14 @@ const doctor = () => {
   passed = check("Wrangler", wranglerAvailable) && passed;
   if (!wranglerAvailable) printCommandFailure(wranglerVersion);
   passed = check(".env.local", existsSync(envPath), existsSync(envPath) ? "present" : "missing") && passed;
+  if (existsSync(envPath) && process.platform !== "win32") {
+    const permissions = statSync(envPath).mode & 0o777;
+    passed = check(
+      ".env.local permissions",
+      permissions === 0o600,
+      permissions.toString(8),
+    ) && passed;
+  }
 
   if (wranglerAvailable) {
     const whoami = runWrangler(["whoami"]);
@@ -269,16 +352,71 @@ const doctor = () => {
   }
 
   const databaseId = envValue("D1_DATABASE_ID", values);
+  const databaseName = envValue("D1_DATABASE_NAME", values);
+  const d1Databases = wranglerAvailable ? listD1Databases() : null;
+  const d1Matches = Boolean(
+    databaseName
+    && databaseId
+    && databaseId !== PLACEHOLDER_D1_ID
+    && UUID_PATTERN.test(databaseId)
+    && d1Databases?.some(
+      (database) => (database?.uuid || database?.id) === databaseId && database?.name === databaseName,
+    ),
+  );
   passed =
     check(
-      "D1 database id",
-      Boolean(databaseId && databaseId !== PLACEHOLDER_D1_ID && UUID_PATTERN.test(databaseId)),
-      databaseId && databaseId !== PLACEHOLDER_D1_ID ? databaseId : "missing",
+      `D1 database ${databaseName || "name missing"}`,
+      d1Matches,
+      d1Matches ? databaseId : "missing or mismatched",
     ) && passed;
 
+  const kvNamespaces = wranglerAvailable ? listKvNamespaces() : null;
+  for (const [nameKey, idKey] of [
+    ["KV_NAMESPACE_NAME", "KV_NAMESPACE_ID"],
+    ["KV_PREVIEW_NAMESPACE_NAME", "KV_PREVIEW_NAMESPACE_ID"],
+  ]) {
+    const namespaceName = envValue(nameKey, values);
+    const namespaceId = envValue(idKey, values);
+    const configured = Boolean(
+      namespaceName
+      && namespaceId
+      && namespaceId !== PLACEHOLDER_KV_ID
+      && KV_ID_PATTERN.test(namespaceId),
+    );
+    const matches = configured
+      && Boolean(kvNamespaces?.some((namespace) => namespace?.id === namespaceId && namespace?.title === namespaceName));
+    passed = check(`KV namespace ${namespaceName || nameKey}`, matches, matches ? namespaceId : "missing or mismatched") && passed;
+  }
+
+  const storageLimit = Number(envValue("RESOURCE_STORAGE_LIMIT_BYTES", values));
   passed =
-    check("R2 bucket name", Boolean(envValue("R2_BUCKET_NAME", values)), envValue("R2_BUCKET_NAME", values) || "missing") &&
-    passed;
+    check(
+      "resource storage hard limit",
+      storageLimit === 786_432_000,
+      Number.isFinite(storageLimit) ? `${storageLimit} bytes` : "missing",
+    ) && passed;
+  passed =
+    check(
+      "Workers Free plan confirmation",
+      envValue("WORKERS_FREE_CONFIRMED", values).toLowerCase() === "true",
+      envValue("WORKERS_FREE_CONFIRMED", values).toLowerCase() === "true"
+        ? "confirmed"
+        : "must be explicitly confirmed before deployment",
+    ) && passed;
+
+  const r2RuntimeSources = [
+    "wrangler.toml",
+    "apps/api/src/index.ts",
+    "apps/api/src/resource-store.ts",
+    "scripts/run-wrangler.mjs",
+    "scripts/cloudflare-workers-builds.mjs",
+  ].map((path) => readFileSync(resolve(path), "utf8")).join("\n");
+  passed =
+    check(
+      "R2 disabled",
+      !/r2_buckets|R2Bucket|R2_BUCKET|wrangler\s+r2/i.test(r2RuntimeSources),
+      "runtime code and deployment configuration must not contain an R2 dependency",
+    ) && passed;
 
   const demoMode = envValue("DEMO_MODE", values).toLowerCase();
   passed =
@@ -339,8 +477,8 @@ const setup = () => {
   }
 
   passed = ensureD1(values) && passed;
-  passed = ensureR2(values, "R2_BUCKET_NAME") && passed;
-  passed = ensureR2(values, "R2_PREVIEW_BUCKET_NAME") && passed;
+  passed = ensureKvNamespace(values, "KV_NAMESPACE_NAME", "KV_NAMESPACE_ID") && passed;
+  passed = ensureKvNamespace(values, "KV_PREVIEW_NAMESPACE_NAME", "KV_PREVIEW_NAMESPACE_ID") && passed;
   passed = ensureAuthPassword(values) && passed;
 
   process.exit(passed ? 0 : 1);

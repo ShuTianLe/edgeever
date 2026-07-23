@@ -89,6 +89,9 @@ export type ResourceStorageSummary = {
   totalBytes: number;
   imageCount: number;
   attachmentCount: number;
+  storedBytes: number;
+  storageLimitBytes: number;
+  pendingDeletionBytes: number;
 };
 
 export type ApiToken = {

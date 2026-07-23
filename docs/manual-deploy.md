@@ -37,7 +37,7 @@ The manual entrypoint adds local configuration checks before that pipeline. Rout
    EDGE_EVER_PASSWORD='<your password>' bun run deploy:setup
    ```
 
-`deploy:setup` uses the project-local Wrangler, starts `wrangler login` when authorization is missing, creates or reuses D1 and R2, and writes the resulting non-secret configuration to the git-ignored `.env.local`. `deploy:manual` runs the doctor, production build, common deployment pipeline, and remote verification.
+`deploy:setup` uses the project-local Wrangler, starts `wrangler login` when authorization is missing, creates D1 and dedicated production/preview Workers KV namespaces, and writes the resulting non-secret configuration to the git-ignored `.env.local`. It stops on an unconfirmed same-name resource instead of reusing unknown data. `deploy:manual` runs the doctor, production build, common deployment pipeline, and remote verification.
 
 ## Creating Resources Manually
 
@@ -47,14 +47,20 @@ If you do not want `deploy:setup` to create resources, run:
 cp .env.local.example .env.local
 bun install
 bunx wrangler d1 create edgeever
-bunx wrangler r2 bucket create edgeever-resources
+bunx wrangler kv namespace create edgeever-resources
+bunx wrangler kv namespace create edgeever-resources-preview
 ```
 
 Copy the returned D1 ID and the resource names into `.env.local`:
 
 ```text
 EDGE_EVER_D1_DATABASE_ID=<database_id>
-EDGE_EVER_R2_BUCKET_NAME=edgeever-resources
+EDGE_EVER_KV_NAMESPACE_NAME=edgeever-resources
+EDGE_EVER_KV_NAMESPACE_ID=<namespace_id>
+EDGE_EVER_KV_PREVIEW_NAMESPACE_NAME=edgeever-resources-preview
+EDGE_EVER_KV_PREVIEW_NAMESPACE_ID=<preview_namespace_id>
+EDGE_EVER_RESOURCE_STORAGE_LIMIT_BYTES=786432000
+EDGE_EVER_WORKERS_FREE_CONFIRMED=true
 EDGE_EVER_AUTH_USERNAME=admin
 EDGE_EVER_AUTH_PASSWORD=<strong password>
 EDGE_EVER_SESSION_TTL_DAYS=400
@@ -84,7 +90,7 @@ EdgeEver fails closed: a production instance without completed D1 migrations or 
     bun run auth:reset-password -- --remote --username admin
   ```
 
-The binding names must be exactly `DB` for D1 and `RESOURCES` for R2. Existing installations using `EDGE_EVER_AUTH_PASSWORD_HASH` remain supported; when both password Secrets exist, the hash takes precedence.
+The binding names must be exactly `DB` for D1 and `RESOURCES` for Workers KV. Files are limited to 25 MiB and the instance enforces a 750 MiB physical storage cap. On Workers Free, operations fail instead of producing overage charges when account-level KV quotas are exhausted. Existing installations using `EDGE_EVER_AUTH_PASSWORD_HASH` remain supported; when both password Secrets exist, the hash takes precedence.
 
 ## Enable Workers Builds and Automatic Updates
 

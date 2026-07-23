@@ -42,7 +42,7 @@ Release 以上一个实际发布的正式 Release 为基线，审计完整提交
 
 ## 本地启动约束
 
-- 默认使用 `bun run dev` 启动完整本地环境（本地 D1/R2 和固定演示种子），不得连接 `.env.local` 中的远程实例。
+- 默认使用 `bun run dev` 启动完整本地环境（本地 D1/KV 和固定演示种子），不得连接 `.env.local` 中的远程实例。
 - 仅在用户明确指定远程实例并要求连接时，使用 `EDGE_EVER_INSTANCE=<实例名> bun run dev:remote`；私有配置以 `.env.local` 为准，不得硬编码实例名。
 - 仅在用户明确要求只启动前端时使用 `bun run dev:web`。
 

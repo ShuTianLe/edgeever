@@ -930,7 +930,7 @@
       ],
       "post": {
         "summary": "Upload image resource for memo",
-        "description": "Uploads an image resource for a memo. Images are stored as provided; server-side compression is disabled.",
+        "description": "Uploads an image or attachment to Workers KV. Files must be no larger than 25 MiB and the instance enforces a 750 MiB physical storage limit.",
         "requestBody": {
           "required": true,
           "content": {
@@ -964,6 +964,15 @@
                 }
               }
             }
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "507": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1102,7 +1111,7 @@
       ],
       "put": {
         "summary": "Import one resource from an EdgeEver ZIP",
-        "description": "Interactive-user-only resource import. The multipart metadata field contains the structured EdgeEver ZIP resource record.",
+        "description": "Interactive-user-only resource import into Workers KV. The multipart metadata field contains the structured EdgeEver ZIP resource record. Files must be no larger than 25 MiB.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1118,7 +1127,12 @@
             }
           }
         },
-        "responses": { "200": { "$ref": "#/components/responses/Ok" } }
+        "responses": {
+          "200": { "$ref": "#/components/responses/Ok" },
+          "413": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" },
+          "507": { "$ref": "#/components/responses/Error" }
+        }
       }
     },
     "/api/v1/resources": {
@@ -1178,6 +1192,9 @@
         "responses": {
           "200": {
             "description": "Resource blob"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -2001,9 +2018,29 @@
           },
           "attachmentCount": {
             "type": "integer"
+          },
+          "storedBytes": {
+            "type": "integer",
+            "description": "Physical bytes currently counted against the Workers KV storage limit."
+          },
+          "storageLimitBytes": {
+            "type": "integer",
+            "description": "Configured hard storage limit for this EdgeEver instance."
+          },
+          "pendingDeletionBytes": {
+            "type": "integer",
+            "description": "Bytes queued for the next Workers KV cleanup run."
           }
         },
-        "required": ["totalCount", "totalBytes", "imageCount", "attachmentCount"]
+        "required": [
+          "totalCount",
+          "totalBytes",
+          "imageCount",
+          "attachmentCount",
+          "storedBytes",
+          "storageLimitBytes",
+          "pendingDeletionBytes"
+        ]
       },
       "TiptapDoc": {
         "type": "object",

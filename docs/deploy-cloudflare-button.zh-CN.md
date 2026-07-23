@@ -1,14 +1,14 @@
 # 使用 Cloudflare 一键部署 EdgeEver
 
-**Deploy to Cloudflare** 按钮是推荐的首次安装方式。它会在你的 GitHub 账号中创建仓库，自动创建 Worker、D1 数据库和 R2 存储桶，执行数据库 migration，并将仓库连接到 Cloudflare Workers Builds。
+**Deploy to Cloudflare** 按钮是推荐的首次安装方式。它会在你的 GitHub 账号中创建仓库，自动创建 Worker、D1 数据库和 Workers KV namespace，执行数据库 migration，并将仓库连接到 Cloudflare Workers Builds。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/tianma-if/edgeever)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ShuTianLe/edgeever)
 
 ## 首次安装
 
 1. 登录 Cloudflare 和 GitHub，然后打开上方按钮。
 2. 按提示授权 **Cloudflare Workers & Pages** GitHub App。
-3. 选择目标仓库名、Worker 名称、D1 数据库名称和 R2 bucket 名称。
+3. 选择目标仓库名、Worker 名称、D1 数据库名称和 Workers KV namespace。
 4. 为 `EDGE_EVER_AUTH_PASSWORD` 设置仅供当前实例使用的强密码。该字段是 Worker Secret，不得提交到 Git。
 5. 保存并部署。Cloudflare 会执行仓库统一的部署流水线：构建、远程 D1 migration、Worker 发布和部署验证。
 6. 打开生成的 `*.workers.dev` 地址，确认 `/api/health` 返回 `200` 和 `"ok": true`，然后使用用户名 `admin` 和刚设置的密码登录。

@@ -68,15 +68,34 @@ import {
   resolveSessionDeviceId,
   type LoginDeviceSessionRow,
 } from "./auth-session-devices";
+import {
+  commitResourceStorageReservationStatement,
+  DEFAULT_RESOURCE_STORAGE_LIMIT_BYTES,
+  drainResourceGarbageCollection,
+  enqueueResourceDeletionStatement,
+  getResourceObject,
+  getResourceStorageUsage,
+  MAX_RESOURCE_VALUE_BYTES,
+  putResourceObject,
+  recalculateResourceStorageUsage,
+  resolveResourceStorageLimit,
+  ResourceObjectWriteError,
+  ResourceStorageQuotaExceededError,
+  trackOrphanedResourceObject,
+  type ResourceStorageUsage,
+  writeResourceObjectWithQuota,
+} from "./resource-store";
 
 type Bindings = {
   DB: D1Database;
-  RESOURCES: R2Bucket;
+  RESOURCES: KVNamespace;
   EDGE_EVER_AUTH_USERNAME?: string;
   EDGE_EVER_AUTH_PASSWORD?: string;
   EDGE_EVER_AUTH_PASSWORD_HASH?: string;
   EDGE_EVER_SESSION_TTL_DAYS?: string;
-  EDGE_EVER_R2_BUCKET_NAME?: string;
+  EDGE_EVER_KV_NAMESPACE_NAME?: string;
+  EDGE_EVER_RESOURCE_STORAGE_LIMIT_BYTES?: string;
+  EDGE_EVER_RESOURCE_GC_CRON?: string;
   EDGE_EVER_DEMO_MODE?: string;
   EDGE_EVER_LOCAL_DEMO_SEED?: string;
   EDGE_EVER_ALLOW_UNAUTHENTICATED?: string;
@@ -277,7 +296,12 @@ const PASSWORD_SALT_BYTES = 16;
 const SESSION_TOKEN_BYTES = 32;
 const DEFAULT_SESSION_TTL_DAYS = 400;
 const MAX_SESSION_TTL_DAYS = 400;
-const DEFAULT_R2_BUCKET_NAME = "edgeever-resources";
+const DEFAULT_RESOURCE_NAMESPACE_NAME = "edgeever-resources";
+const DEFAULT_RESOURCE_GC_CRON = "15 0 * * *";
+const resourceNamespaceName = (env: Bindings) =>
+  env.EDGE_EVER_KV_NAMESPACE_NAME?.trim() || DEFAULT_RESOURCE_NAMESPACE_NAME;
+const resourceStorageLimit = (env: Bindings) =>
+  resolveResourceStorageLimit(env.EDGE_EVER_RESOURCE_STORAGE_LIMIT_BYTES);
 const DEMO_SEED_NOTEBOOKS = [
   { id: "nb_inbox", parentId: null, name: "等待分类", slug: "inbox", icon: "notebook", color: "#0f766e", sortOrder: 10 },
   { id: "nb_projects", parentId: null, name: "工作项目", slug: "work-projects", icon: "notebook", color: "#2563eb", sortOrder: 20 },
@@ -508,7 +532,7 @@ const DEMO_SEED_MEMOS_ZH = [
     tags: ["image", "attachment", "demo"],
     isPinned: false,
     markdown:
-      "## 图片笔记示例\n\n笔记正文可以直接插入图片。上传后的图片会进入 R2，正文里保存的是资源 URL，API、MCP 和前端编辑器都能读取。\n\n![EdgeEver 图片资源示例](/api/v1/resources/res_demo_gallery_image/blob)\n\n**图注：** 一张图片和它的说明、结论放在同一条笔记里，回看时就不必猜测截图来自哪里。\n\n这类笔记适合保存截图、设计稿、读书摘图和临时资料。",
+      "## 图片笔记示例\n\n笔记正文可以直接插入图片。上传后的图片会进入 Workers KV，正文里保存的是资源 URL，API、MCP 和前端编辑器都能读取。\n\n![EdgeEver 图片资源示例](/api/v1/resources/res_demo_gallery_image/blob)\n\n**图注：** 一张图片和它的说明、结论放在同一条笔记里，回看时就不必猜测截图来自哪里。\n\n这类笔记适合保存截图、设计稿、读书摘图和临时资料。",
   },
   {
     id: "memo_demo_table",
@@ -805,8 +829,8 @@ const DEMO_SEED_RESOURCES = [
 ];
 const DEMO_SEED_NOTEBOOK_IDS = DEMO_SEED_NOTEBOOKS.map((notebook) => notebook.id);
 const DEMO_SEED_MEMO_IDS = DEMO_SEED_MEMOS.map((memo) => memo.id);
-const MAX_IMAGE_UPLOAD_BYTES = 100 * 1024 * 1024;
-const MAX_ATTACHMENT_UPLOAD_BYTES = 100 * 1024 * 1024;
+const MAX_IMAGE_UPLOAD_BYTES = MAX_RESOURCE_VALUE_BYTES;
+const MAX_ATTACHMENT_UPLOAD_BYTES = MAX_RESOURCE_VALUE_BYTES;
 const REVISION_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000;
 const API_TOKEN_BYTES = 32;
 const API_TOKEN_PREFIX = "eev";
@@ -1915,7 +1939,7 @@ app.post("/api/v1/memos/batch/delete", zValidator("json", DeleteMemosSchema), as
   const actor = getAuditActor(c);
 
   try {
-    const deleted = await deleteMemosRecord(c.env.DB, c.env.RESOURCES, getWorkspaceId(c), input.memoIds, Boolean(input.permanent), actor);
+    const deleted = await deleteMemosRecord(c.env.DB, getWorkspaceId(c), input.memoIds, Boolean(input.permanent), actor);
     return c.json({ ok: true, deleted });
   } catch (error) {
     if (error instanceof AppError) {
@@ -1934,7 +1958,7 @@ app.delete("/api/v1/memos/trash/empty", async (c) => {
   }
 
   const actor = getAuditActor(c);
-  const deleted = await emptyTrashMemosRecord(c.env.DB, c.env.RESOURCES, getWorkspaceId(c), actor);
+  const deleted = await emptyTrashMemosRecord(c.env.DB, getWorkspaceId(c), actor);
 
   return c.json({ ok: true, deleted });
 });
@@ -2125,9 +2149,9 @@ app.get("/api/v1/exports/markdown", async (c) => {
   if (memoIds.length > 0) {
     const placeholders = memoIds.map(() => "?").join(", ");
     const resourceRows = await c.env.DB.prepare(
-      `SELECT r.id, r.memo_id, r.original_memo_id, r.bucket_name, r.object_key, r.kind, r.mime_type,
-              r.filename, r.byte_size, r.sha256, r.width, r.height, r.created_at, r.updated_at
-       FROM resources
+       `SELECT r.id, r.memo_id, r.original_memo_id, r.bucket_name, r.object_key, r.kind, r.mime_type,
+               r.filename, r.byte_size, r.sha256, r.width, r.height, r.created_at, r.updated_at
+       FROM resources r
        WHERE is_deleted = 0 AND memo_id IN (${placeholders})
        ORDER BY memo_id ASC, created_at ASC, id ASC`
     )
@@ -2281,64 +2305,71 @@ app.put("/api/v1/restores/json/resources/:id", async (c) => {
     return conflict(c, "cross_workspace_id_conflict", "Backup resource ID is already used by another user.");
   }
   const previous = await c.env.DB.prepare(
-    `SELECT r.object_key FROM resources r INNER JOIN memos m ON m.id = r.memo_id WHERE r.id = ? AND m.workspace_id = ?`
-  ).bind(metadata.id, getWorkspaceId(c)).first<{ object_key: string }>();
+    `SELECT r.object_key, r.byte_size
+     FROM resources r
+     INNER JOIN memos m ON m.id = r.memo_id
+     WHERE r.id = ? AND m.workspace_id = ?`
+  ).bind(metadata.id, getWorkspaceId(c)).first<{ object_key: string; byte_size: number }>();
   const originalMemo = metadata.originalMemoId
     ? await c.env.DB.prepare(`SELECT id FROM memos WHERE id = ? AND workspace_id = ?`).bind(metadata.originalMemoId, getWorkspaceId(c)).first<{ id: string }>()
     : null;
 
-  await c.env.RESOURCES.put(objectKey, bytes, {
-    httpMetadata: { contentType: metadata.mimeType ?? file.type ?? "application/octet-stream" },
-    customMetadata: { memoId: metadata.memoId, resourceId: metadata.id, restored: "true" },
-  });
+  await storeResourceObject(c, objectKey, bytes);
 
   try {
     const now = isoNow();
-    await c.env.DB.prepare(
-      `INSERT INTO resources (
-        id, memo_id, original_memo_id, bucket_name, object_key, kind, mime_type, filename,
-        byte_size, sha256, width, height, metadata_json, is_deleted, created_at, updated_at, deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
-      ON CONFLICT(id) DO UPDATE SET
-        memo_id = excluded.memo_id,
-        original_memo_id = excluded.original_memo_id,
-        bucket_name = excluded.bucket_name,
-        object_key = excluded.object_key,
-        kind = excluded.kind,
-        mime_type = excluded.mime_type,
-        filename = excluded.filename,
-        byte_size = excluded.byte_size,
-        sha256 = excluded.sha256,
-        width = excluded.width,
-        height = excluded.height,
-        metadata_json = excluded.metadata_json,
-        is_deleted = 0,
-        updated_at = excluded.updated_at,
-        deleted_at = NULL`
-    ).bind(
-      metadata.id,
-      metadata.memoId,
-      originalMemo?.id ?? null,
-      c.env.EDGE_EVER_R2_BUCKET_NAME?.trim() || DEFAULT_R2_BUCKET_NAME,
-      objectKey,
-      metadata.kind,
-      metadata.mimeType ?? file.type ?? null,
-      filename,
-      bytes.byteLength,
-      await sha256Bytes(bytes),
-      metadata.width,
-      metadata.height,
-      JSON.stringify({ source: "edgeever-zip-import" }),
-      metadata.createdAt,
-      now
-    ).run();
-  } catch (error) {
-    await c.env.RESOURCES.delete(objectKey);
-    throw error;
-  }
+    const statements = [
+      c.env.DB.prepare(
+        `INSERT INTO resources (
+          id, memo_id, original_memo_id, bucket_name, object_key, kind, mime_type, filename,
+          byte_size, sha256, width, height, metadata_json, is_deleted, created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+        ON CONFLICT(id) DO UPDATE SET
+          memo_id = excluded.memo_id,
+          original_memo_id = excluded.original_memo_id,
+          bucket_name = excluded.bucket_name,
+          object_key = excluded.object_key,
+          kind = excluded.kind,
+          mime_type = excluded.mime_type,
+          filename = excluded.filename,
+          byte_size = excluded.byte_size,
+          sha256 = excluded.sha256,
+          width = excluded.width,
+          height = excluded.height,
+          metadata_json = excluded.metadata_json,
+          is_deleted = 0,
+          updated_at = excluded.updated_at,
+          deleted_at = NULL`
+      ).bind(
+        metadata.id,
+        metadata.memoId,
+        originalMemo?.id ?? null,
+        resourceNamespaceName(c.env),
+        objectKey,
+        metadata.kind,
+        metadata.mimeType ?? file.type ?? null,
+        filename,
+        bytes.byteLength,
+        await sha256Bytes(bytes),
+        metadata.width,
+        metadata.height,
+        JSON.stringify({ source: "edgeever-zip-import" }),
+        metadata.createdAt,
+        now
+      ),
+      commitResourceStorageReservationStatement(c.env.DB, bytes.byteLength),
+    ];
 
-  if (previous?.object_key && previous.object_key !== objectKey) {
-    await c.env.RESOURCES.delete(previous.object_key);
+    if (previous?.object_key && previous.object_key !== objectKey) {
+      statements.push(
+        enqueueResourceDeletionStatement(c.env.DB, previous.object_key, previous.byte_size),
+      );
+    }
+
+    await c.env.DB.batch(statements);
+  } catch (error) {
+    await trackFailedResourceWrite(c.env.DB, objectKey, bytes.byteLength);
+    throw error;
   }
 
   return c.json({ ok: true });
@@ -2352,7 +2383,7 @@ app.get("/api/v1/resources", async (c) => {
   }
 
   const limit = clampNumber(Number(c.req.query("limit") ?? 500), 1, 500);
-  const [rows, stats] = await Promise.all([
+  const [rows, stats, storageUsage] = await Promise.all([
     c.env.DB.prepare(
       `SELECT r.id, r.memo_id, r.original_memo_id, r.bucket_name, r.object_key, r.kind,
               r.mime_type, r.filename, r.byte_size, r.sha256, r.width, r.height,
@@ -2375,11 +2406,12 @@ app.get("/api/v1/resources", async (c) => {
        INNER JOIN memos m ON m.id = r.memo_id
        WHERE m.workspace_id = ? AND r.is_deleted = 0`
     ).bind(getWorkspaceId(c)).first<ResourceStatsRow>(),
+    getResourceStorageUsage(c.env.DB),
   ]);
 
   return c.json({
     resources: rows.results.map(mapResourceListItem),
-    summary: mapResourceStorageSummary(stats),
+    summary: mapResourceStorageSummary(stats, storageUsage, resourceStorageLimit(c.env)),
   });
 });
 
@@ -2437,6 +2469,70 @@ app.post("/api/v1/memos/:id/resources", async (c) => {
   return c.json({ resource }, 201);
 });
 
+const storeResourceObject = async (
+  c: AppContext,
+  objectKey: string,
+  bytes: Uint8Array,
+) => {
+  try {
+    await writeResourceObjectWithQuota(
+      c.env.DB,
+      c.env.RESOURCES,
+      objectKey,
+      bytes,
+      resourceStorageLimit(c.env),
+    );
+  } catch (error) {
+    if (error instanceof ResourceStorageQuotaExceededError) {
+      throw new AppError(
+        "storage_quota_exceeded",
+        "The 750 MiB EdgeEver attachment storage limit has been reached.",
+        507,
+      );
+    }
+
+    if (error instanceof ResourceObjectWriteError) {
+      console.error(JSON.stringify({
+        message: "Workers KV resource write failed",
+        objectKey,
+        byteSize: bytes.byteLength,
+        error: error.storageError instanceof Error
+          ? error.storageError.message
+          : String(error.storageError),
+        reservationReleaseError: error.reservationReleaseError instanceof Error
+          ? error.reservationReleaseError.message
+          : error.reservationReleaseError
+            ? String(error.reservationReleaseError)
+            : undefined,
+      }));
+      throw new AppError(
+        "resource_store_unavailable",
+        "Attachment storage is temporarily unavailable.",
+        503,
+      );
+    }
+
+    throw error;
+  }
+};
+
+const trackFailedResourceWrite = async (
+  db: D1Database,
+  objectKey: string,
+  byteSize: number,
+) => {
+  try {
+    await trackOrphanedResourceObject(db, objectKey, byteSize);
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: "Failed to queue an orphaned Workers KV resource",
+      objectKey,
+      byteSize,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+  }
+};
+
 const createImageResource = async (
   c: AppContext,
   input: {
@@ -2459,21 +2555,11 @@ const createImageResource = async (
     source: input.source,
   });
   const objectKey = `workspaces/${getWorkspaceId(c)}/memos/${input.memoId}/${resourceId}${inferImageExtension(processed.filename, processed.mimeType)}`;
-  const bucketName = c.env.EDGE_EVER_R2_BUCKET_NAME?.trim() || DEFAULT_R2_BUCKET_NAME;
+  const bucketName = resourceNamespaceName(c.env);
   const filename = normalizeFilename(processed.filename) || `${resourceId}${inferImageExtension(processed.filename, processed.mimeType)}`;
   const checksum = await sha256Bytes(processed.bytes);
 
-  await c.env.RESOURCES.put(objectKey, processed.bytes, {
-    httpMetadata: {
-      contentType: processed.mimeType,
-      cacheControl: "private, max-age=3600",
-    },
-    customMetadata: {
-      memoId: input.memoId,
-      resourceId,
-      filename,
-    },
-  });
+  await storeResourceObject(c, objectKey, processed.bytes);
 
   try {
     await c.env.DB.batch([
@@ -2503,9 +2589,10 @@ const createImageResource = async (
         byteSize: processed.bytes.byteLength,
         compressed: processed.compressed,
       }),
+      commitResourceStorageReservationStatement(c.env.DB, processed.bytes.byteLength),
     ]);
   } catch (error) {
-    await c.env.RESOURCES.delete(objectKey);
+    await trackFailedResourceWrite(c.env.DB, objectKey, processed.bytes.byteLength);
     throw error;
   }
 
@@ -2534,20 +2621,10 @@ const createAttachmentResource = async (
   const now = isoNow();
   const filename = normalizeFilename(input.filename) || resourceId;
   const objectKey = `workspaces/${getWorkspaceId(c)}/memos/${input.memoId}/${resourceId}`;
-  const bucketName = c.env.EDGE_EVER_R2_BUCKET_NAME?.trim() || DEFAULT_R2_BUCKET_NAME;
+  const bucketName = resourceNamespaceName(c.env);
   const checksum = await sha256Bytes(input.bytes);
 
-  await c.env.RESOURCES.put(objectKey, input.bytes, {
-    httpMetadata: {
-      contentType: input.mimeType,
-      cacheControl: "private, max-age=3600",
-    },
-    customMetadata: {
-      memoId: input.memoId,
-      resourceId,
-      filename,
-    },
-  });
+  await storeResourceObject(c, objectKey, input.bytes);
 
   try {
     await c.env.DB.batch([
@@ -2574,9 +2651,10 @@ const createAttachmentResource = async (
         mimeType: input.mimeType,
         byteSize: input.bytes.byteLength,
       }),
+      commitResourceStorageReservationStatement(c.env.DB, input.bytes.byteLength),
     ]);
   } catch (error) {
-    await c.env.RESOURCES.delete(objectKey);
+    await trackFailedResourceWrite(c.env.DB, objectKey, input.bytes.byteLength);
     throw error;
   }
 
@@ -2595,13 +2673,13 @@ const validateImageUpload = (mimeType: string, size: number) => {
   }
 
   if (size <= 0 || size > MAX_IMAGE_UPLOAD_BYTES) {
-    throw new AppError("upload_too_large", "Image must be between 1 byte and 50 MB.", 413);
+    throw new AppError("upload_too_large", "Image must be between 1 byte and 25 MiB.", 413);
   }
 };
 
 const validateAttachmentUpload = (size: number) => {
   if (size <= 0 || size > MAX_ATTACHMENT_UPLOAD_BYTES) {
-    throw new AppError("upload_too_large", "Attachment must be between 1 byte and 50 MB.", 413);
+    throw new AppError("upload_too_large", "Attachment must be between 1 byte and 25 MiB.", 413);
   }
 };
 
@@ -2649,21 +2727,33 @@ app.get("/api/v1/resources/:id/blob", async (c) => {
     return notFound(c, "Resource not found");
   }
 
-  const object = await c.env.RESOURCES.get(resource.object_key);
+  const object = await getResourceObject(c.env.RESOURCES, resource.object_key);
 
   if (!object) {
+    const ageMs = Date.now() - Date.parse(resource.updated_at);
+    if (Number.isFinite(ageMs) && ageMs < 90_000) {
+      return c.json(
+        {
+          error: {
+            code: "resource_not_ready",
+            message: "Resource is still propagating through Workers KV.",
+          },
+        },
+        503,
+        { "Retry-After": "2", "Cache-Control": "no-store" },
+      );
+    }
     return notFound(c, "Resource object not found");
   }
 
   const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set("Content-Type", resource.mime_type ?? headers.get("Content-Type") ?? "application/octet-stream");
-  headers.set("Cache-Control", headers.get("Cache-Control") ?? "private, max-age=3600");
-  headers.set("Content-Length", String(object.size));
+  headers.set("Content-Type", resource.mime_type ?? "application/octet-stream");
+  headers.set("Cache-Control", "private, max-age=3600");
+  headers.set("Content-Length", String(resource.byte_size));
   headers.set("Content-Disposition", contentDispositionInline(resource.filename));
   headers.set("X-Content-Type-Options", "nosniff");
 
-  return new Response(object.body, { headers });
+  return new Response(object, { headers });
 });
 
 app.patch("/api/v1/memos/:id", zValidator("json", MemoUpdateSchema), async (c) => {
@@ -2902,11 +2992,10 @@ app.delete("/api/v1/memos/:id", async (c) => {
 
     const resources = await getResourceRowsForMemo(c.env.DB, workspaceId, id);
 
-    if (resources.length > 0) {
-      await c.env.RESOURCES.delete(resources.map((resource) => resource.object_key));
-    }
-
     await c.env.DB.batch([
+      ...resources.map((resource) =>
+        enqueueResourceDeletionStatement(c.env.DB, resource.object_key, resource.byte_size)
+      ),
       c.env.DB.prepare(`DELETE FROM memos_fts WHERE memo_id = ?`).bind(id),
       c.env.DB.prepare(`DELETE FROM resources WHERE memo_id = ?`).bind(id),
       c.env.DB.prepare(`DELETE FROM memo_revisions WHERE memo_id = ?`).bind(id),
@@ -3063,11 +3152,24 @@ const worker = {
     return app.fetch(request, env, ctx);
   },
   async scheduled(controller: ScheduledController, env: Bindings, ctx: ExecutionContext) {
-    if (!isDemoMode(env)) {
-      return;
+    const gcCron = env.EDGE_EVER_RESOURCE_GC_CRON?.trim() || DEFAULT_RESOURCE_GC_CRON;
+
+    if (controller.cron === gcCron) {
+      ctx.waitUntil(
+        drainResourceGarbageCollection(env.DB, env.RESOURCES).then((result) => {
+          console.log(JSON.stringify({
+            message: "Workers KV resource cleanup completed",
+            cron: controller.cron,
+            deleted: result.deleted,
+            attempted: result.attempted,
+          }));
+        }),
+      );
     }
 
-    ctx.waitUntil(resetDemoData(env, controller.scheduledTime));
+    if (isDemoMode(env) && controller.cron !== gcCron) {
+      ctx.waitUntil(resetDemoData(env, controller.scheduledTime));
+    }
   },
 };
 
@@ -3687,7 +3789,7 @@ const callMcpTool = async (
         return { dryRun: true, memos: await getMemosForBulkAction(c.env.DB, auth.workspaceId, memoIds, 0) };
       }
 
-      const deleted = await deleteMemosRecord(c.env.DB, c.env.RESOURCES, auth.workspaceId, memoIds, false, getAuditActor(c));
+      const deleted = await deleteMemosRecord(c.env.DB, auth.workspaceId, memoIds, false, getAuditActor(c));
       return { ok: true, deleted };
     }
     case "restore_memos": {
@@ -3851,7 +3953,7 @@ const callMcpTool = async (
     }
     case "list_resources": {
       assertScope(auth, "read:resources");
-      return await listResourcesForMcp(c.env.DB, auth.workspaceId, clampNumber(Number(args.limit ?? 100), 1, 500));
+      return await listResourcesForMcp(c.env, auth.workspaceId, clampNumber(Number(args.limit ?? 100), 1, 500));
     }
     case "list_memo_revisions": {
       assertScope(auth, "read:memos");
@@ -3928,7 +4030,7 @@ const callMcpTool = async (
     }
     case "get_workspace_stats": {
       assertScope(auth, "read:memos");
-      return await getWorkspaceStats(c.env.DB, auth.workspaceId);
+      return await getWorkspaceStats(c.env, auth.workspaceId);
     }
     default:
       throw new Error(`Unknown tool: ${name}`);
@@ -4798,11 +4900,18 @@ const mapResourceListItem = (row: ResourceListRow): ResourceListItem => ({
   memoDeleted: Boolean(row.memo_is_deleted),
 });
 
-const mapResourceStorageSummary = (row: ResourceStatsRow | null): ResourceStorageSummary => ({
+const mapResourceStorageSummary = (
+  row: ResourceStatsRow | null,
+  usage: ResourceStorageUsage,
+  storageLimitBytes: number,
+): ResourceStorageSummary => ({
   totalCount: row?.total_count ?? 0,
   totalBytes: row?.total_bytes ?? 0,
   imageCount: row?.image_count ?? 0,
   attachmentCount: row?.attachment_count ?? 0,
+  storedBytes: usage.usedBytes,
+  storageLimitBytes,
+  pendingDeletionBytes: usage.pendingDeletionBytes,
 });
 
 const mapApiToken = (row: ApiTokenRow): ApiToken => ({
@@ -5437,7 +5546,6 @@ const getMemoDetail = async (db: D1Database, workspaceId: string, id: string, in
 
 const deleteMemosRecord = async (
   db: D1Database,
-  resourcesBucket: R2Bucket,
   workspaceId: string,
   memoIds: string[],
   permanent: boolean,
@@ -5474,19 +5582,17 @@ const deleteMemosRecord = async (
   if (permanent) {
     const resourceRows = await db
       .prepare(
-        `SELECT object_key
+        `SELECT object_key, byte_size
          FROM resources
          WHERE memo_id IN (${placeholders})`
       )
       .bind(...uniqueMemoIds)
-      .all<{ object_key: string }>();
-    const objectKeys = resourceRows.results.map((resource) => resource.object_key);
-
-    if (objectKeys.length > 0) {
-      await resourcesBucket.delete(objectKeys);
-    }
+      .all<{ object_key: string; byte_size: number }>();
 
     statements.push(
+      ...resourceRows.results.map((resource) =>
+        enqueueResourceDeletionStatement(db, resource.object_key, resource.byte_size)
+      ),
       db.prepare(`DELETE FROM memos_fts WHERE memo_id IN (${placeholders})`).bind(...uniqueMemoIds),
       db.prepare(`DELETE FROM resources WHERE memo_id IN (${placeholders})`).bind(...uniqueMemoIds),
       db.prepare(`DELETE FROM memo_revisions WHERE memo_id IN (${placeholders})`).bind(...uniqueMemoIds),
@@ -5640,7 +5746,6 @@ const restoreMemosRecord = async (
 
 const emptyTrashMemosRecord = async (
   db: D1Database,
-  resourcesBucket: R2Bucket,
   workspaceId: string,
   actor: { actorType: "user" | "agent"; actorId: string | null }
 ) => {
@@ -5659,19 +5764,17 @@ const emptyTrashMemosRecord = async (
 
   const resourceRows = await db
     .prepare(
-      `SELECT r.object_key
+      `SELECT r.object_key, r.byte_size
        FROM resources r
        INNER JOIN memos m ON m.id = r.memo_id
        WHERE m.workspace_id = ? AND m.is_deleted = 1`
     )
-    .bind(workspaceId).all<{ object_key: string }>();
-  const objectKeys = resourceRows.results.map((resource) => resource.object_key);
-
-  if (objectKeys.length > 0) {
-    await resourcesBucket.delete(objectKeys);
-  }
+    .bind(workspaceId).all<{ object_key: string; byte_size: number }>();
 
   await db.batch([
+    ...resourceRows.results.map((resource) =>
+      enqueueResourceDeletionStatement(db, resource.object_key, resource.byte_size)
+    ),
     db.prepare(`DELETE FROM memos_fts WHERE memo_id IN (SELECT id FROM memos WHERE workspace_id = ? AND is_deleted = 1)`).bind(workspaceId),
     db.prepare(`UPDATE resources SET original_memo_id = NULL WHERE original_memo_id IN (SELECT id FROM memos WHERE workspace_id = ? AND is_deleted = 1)`).bind(workspaceId),
     db.prepare(`DELETE FROM resources WHERE memo_id IN (SELECT id FROM memos WHERE workspace_id = ? AND is_deleted = 1)`).bind(workspaceId),
@@ -5720,7 +5823,7 @@ const ensureDemoSeed = async (
   const db = env.DB;
   const now = isoNow();
   const statements: D1PreparedStatement[] = [];
-  const bucketName = env.EDGE_EVER_R2_BUCKET_NAME?.trim() || DEFAULT_R2_BUCKET_NAME;
+  const bucketName = resourceNamespaceName(env);
   const overwriteExisting = options.overwriteExisting === true;
   const existingNotebookIds = overwriteExisting
     ? new Set<string>()
@@ -5902,18 +6005,7 @@ const ensureDemoSeed = async (
     const objectKey = `demo/${resource.memoId}/${resource.id}.svg`;
 
     if (options.refreshResources || !existingResourceIds.has(resource.id)) {
-      await env.RESOURCES.put(objectKey, bytes, {
-        httpMetadata: {
-          contentType: resource.mimeType,
-          cacheControl: "private, max-age=3600",
-        },
-        customMetadata: {
-          memoId: resource.memoId,
-          resourceId: resource.id,
-          filename: resource.filename,
-          demoSeed: "true",
-        },
-      });
+      await putResourceObject(env.RESOURCES, objectKey, bytes);
     }
 
     statements.push(
@@ -5959,6 +6051,7 @@ const ensureDemoSeed = async (
 
   if (statements.length > 0) {
     await db.batch(statements);
+    await recalculateResourceStorageUsage(db);
   }
 };
 
@@ -5973,15 +6066,21 @@ const resetDemoData = async (env: Bindings, scheduledTime: number) => {
   );
   const memoPlaceholders = DEMO_SEED_MEMO_IDS.map(() => "?").join(", ");
   const notebookPlaceholders = DEMO_SEED_NOTEBOOK_IDS.map(() => "?").join(", ");
-  const resourceRows = await db.prepare(`SELECT object_key FROM resources`).all<{ object_key: string }>();
-  const objectKeys = resourceRows.results.map((resource) => resource.object_key);
+  const resourceRows = await db
+    .prepare(
+      `SELECT object_key FROM resources
+       UNION
+       SELECT object_key FROM resource_gc_queue`,
+    )
+    .all<{ object_key: string }>();
 
-  for (let index = 0; index < objectKeys.length; index += 1000) {
-    await env.RESOURCES.delete(objectKeys.slice(index, index + 1000));
+  for (const resource of resourceRows.results) {
+    await env.RESOURCES.delete(resource.object_key);
   }
 
   const resetStatements: D1PreparedStatement[] = [
     db.prepare(`DELETE FROM memos_fts`),
+    db.prepare(`DELETE FROM resource_gc_queue`),
     db.prepare(`DELETE FROM resources`),
     db.prepare(`DELETE FROM memo_revisions`),
     db.prepare(`DELETE FROM memo_contents WHERE memo_id NOT IN (${memoPlaceholders})`).bind(...DEMO_SEED_MEMO_IDS),
@@ -5990,6 +6089,11 @@ const resetDemoData = async (env: Bindings, scheduledTime: number) => {
     db.prepare(`DELETE FROM notebooks WHERE id NOT IN (${notebookPlaceholders})`).bind(...DEMO_SEED_NOTEBOOK_IDS),
     db.prepare(`DELETE FROM api_tokens`),
     db.prepare(`DELETE FROM audit_events`),
+    db.prepare(
+      `UPDATE resource_storage_usage
+       SET used_bytes = 0, reserved_bytes = 0, updated_at = ?
+       WHERE id = 1`,
+    ).bind(now),
   ];
 
   if (demoPasswordHash) {
@@ -6602,9 +6706,9 @@ const listResourcesForMemo = async (db: D1Database, workspaceId: string, memoId:
   return rows.results.map(mapResource);
 };
 
-const listResourcesForMcp = async (db: D1Database, workspaceId: string, limit: number) => {
-  const [rows, stats] = await Promise.all([
-    db
+const listResourcesForMcp = async (env: Bindings, workspaceId: string, limit: number) => {
+  const [rows, stats, storageUsage] = await Promise.all([
+    env.DB
       .prepare(
         `SELECT r.id, r.memo_id, r.original_memo_id, r.bucket_name, r.object_key, r.kind,
                 r.mime_type, r.filename, r.byte_size, r.sha256, r.width, r.height,
@@ -6618,7 +6722,7 @@ const listResourcesForMcp = async (db: D1Database, workspaceId: string, limit: n
       )
       .bind(workspaceId, limit)
       .all<ResourceListRow>(),
-    db
+    env.DB
       .prepare(
         `SELECT COUNT(*) AS total_count,
                 COALESCE(SUM(byte_size), 0) AS total_bytes,
@@ -6629,17 +6733,18 @@ const listResourcesForMcp = async (db: D1Database, workspaceId: string, limit: n
          WHERE m.workspace_id = ? AND r.is_deleted = 0`
       )
       .bind(workspaceId).first<ResourceStatsRow>(),
+    getResourceStorageUsage(env.DB),
   ]);
 
   return {
     resources: rows.results.map(mapResourceListItem),
-    summary: mapResourceStorageSummary(stats),
+    summary: mapResourceStorageSummary(stats, storageUsage, resourceStorageLimit(env)),
   };
 };
 
-const getWorkspaceStats = async (db: D1Database, workspaceId: string) => {
-  const [memoCounts, notebookCount, tagCount, resourceStats] = await Promise.all([
-    db
+const getWorkspaceStats = async (env: Bindings, workspaceId: string) => {
+  const [memoCounts, notebookCount, tagCount, resourceStats, storageUsage] = await Promise.all([
+    env.DB
       .prepare(
         `SELECT
            COUNT(*) AS total,
@@ -6650,15 +6755,15 @@ const getWorkspaceStats = async (db: D1Database, workspaceId: string) => {
          FROM memos WHERE workspace_id = ?`
       )
       .bind(workspaceId).first<{ total: number; active: number; trashed: number; pinned: number; untagged: number }>(),
-    db.prepare(`SELECT COUNT(*) AS count FROM notebooks WHERE workspace_id = ? AND is_deleted = 0`).bind(workspaceId).first<{ count: number }>(),
-    db
+    env.DB.prepare(`SELECT COUNT(*) AS count FROM notebooks WHERE workspace_id = ? AND is_deleted = 0`).bind(workspaceId).first<{ count: number }>(),
+    env.DB
       .prepare(
         `SELECT COUNT(DISTINCT json_each.value) AS count
          FROM memos m, json_each(m.tags_json)
          WHERE m.workspace_id = ? AND m.is_deleted = 0 AND trim(json_each.value) <> ''`
       )
       .bind(workspaceId).first<{ count: number }>(),
-    db
+    env.DB
       .prepare(
         `SELECT COUNT(*) AS total_count,
                 COALESCE(SUM(byte_size), 0) AS total_bytes,
@@ -6669,6 +6774,7 @@ const getWorkspaceStats = async (db: D1Database, workspaceId: string) => {
          WHERE m.workspace_id = ? AND r.is_deleted = 0`
       )
       .bind(workspaceId).first<ResourceStatsRow>(),
+    getResourceStorageUsage(env.DB),
   ]);
 
   return {
@@ -6685,7 +6791,7 @@ const getWorkspaceStats = async (db: D1Database, workspaceId: string) => {
     tags: {
       active: tagCount?.count ?? 0,
     },
-    resources: mapResourceStorageSummary(resourceStats),
+    resources: mapResourceStorageSummary(resourceStats, storageUsage, resourceStorageLimit(env)),
   };
 };
 

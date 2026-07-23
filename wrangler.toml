@@ -1,6 +1,7 @@
 name = "edgeever"
 main = "apps/api/src/index.ts"
-compatibility_date = "2026-06-26"
+compatibility_date = "2026-07-23"
+compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
 [assets]
@@ -15,10 +16,13 @@ database_name = "edgeever"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
-[[r2_buckets]]
+[[kv_namespaces]]
 binding = "RESOURCES"
-bucket_name = "edgeever-resources"
-preview_bucket_name = "edgeever-resources-preview"
+id = "00000000000000000000000000000000"
+preview_id = "00000000000000000000000000000000"
+
+[triggers]
+crons = ["15 0 * * *"]
 
 [observability]
 enabled = true

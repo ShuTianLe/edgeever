@@ -364,6 +364,7 @@ export const zhCN = {
     uploadingFile: "正在上传: {{filename}}",
     title: "附件管理",
     fileCount: "{{count}} 文件",
+    pendingDeletion: "{{size}} 待清理",
     imageCount: "{{count}} 图片",
     filters: {
       all: "全部",

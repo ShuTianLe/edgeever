@@ -97,8 +97,12 @@ const buildVariables = () => {
     "WORKERS_DEV",
     "D1_DATABASE_NAME",
     "D1_DATABASE_ID",
-    "R2_BUCKET_NAME",
-    "R2_PREVIEW_BUCKET_NAME",
+    "KV_NAMESPACE_NAME",
+    "KV_NAMESPACE_ID",
+    "KV_PREVIEW_NAMESPACE_NAME",
+    "KV_PREVIEW_NAMESPACE_ID",
+    "RESOURCE_STORAGE_LIMIT_BYTES",
+    "RESOURCE_GC_CRON",
     "AUTH_USERNAME",
     "AUTH_PASSWORD",
     "AUTH_PASSWORD_HASH",
@@ -199,7 +203,7 @@ const selectBuildToken = async (buildTokens, existingTrigger) => {
   if (tokens.length === 1) return tokens[0];
   if (tokens.length === 0) {
     throw new Error(
-      "No Workers Builds API token was found. In Cloudflare Dashboard open this Worker -> Settings -> Builds -> API token, create or select an API token with D1 edit permission, then rerun the command.",
+      "No Workers Builds API token was found. In Cloudflare Dashboard open this Worker -> Settings -> Builds -> API token, create or select an API token that can deploy the Worker and update D1 and Workers KV bindings, then rerun the command.",
     );
   }
 

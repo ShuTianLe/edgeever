@@ -145,6 +145,9 @@ export const AssetsPane = ({ onClose, activeMemo }: AssetsPaneProps) => {
     totalBytes: 0,
     imageCount: 0,
     attachmentCount: 0,
+    storedBytes: 0,
+    storageLimitBytes: 750 * 1024 * 1024,
+    pendingDeletionBytes: 0,
   };
 
   // Drag and Drop Upload Handler
@@ -181,6 +184,7 @@ export const AssetsPane = ({ onClose, activeMemo }: AssetsPaneProps) => {
         setUploadState("success");
         setTimeout(() => setUploadState("idle"), 2000);
       } catch (err) {
+        setUploadProgress(err instanceof Error ? err.message : t("assets.uploadError"));
         setUploadState("error");
         setTimeout(() => setUploadState("idle"), 3000);
       }
@@ -281,8 +285,14 @@ export const AssetsPane = ({ onClose, activeMemo }: AssetsPaneProps) => {
             <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] font-medium text-slate-400 uppercase tracking-wider">
               <span className="inline-flex items-center gap-1">
                 <HardDrive className="h-3 w-3" />
-                {formatBytes(summary.totalBytes)}
+                {formatBytes(summary.storedBytes)} / {formatBytes(summary.storageLimitBytes)}
               </span>
+              {summary.pendingDeletionBytes > 0 ? (
+                <>
+                  <span>•</span>
+                  <span>{t("assets.pendingDeletion", { size: formatBytes(summary.pendingDeletionBytes) })}</span>
+                </>
+              ) : null}
               <span>•</span>
               <span>{t("assets.fileCount", { count: summary.totalCount })}</span>
               <span>•</span>
@@ -585,7 +595,7 @@ export const AssetsPane = ({ onClose, activeMemo }: AssetsPaneProps) => {
           {uploadState === "error" && (
             <>
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-50 text-rose-600 text-xs font-bold font-mono">✕</span>
-              <span className="text-xs font-semibold text-rose-700">{t("assets.uploadError")}</span>
+              <span className="text-xs font-semibold text-rose-700">{uploadProgress || t("assets.uploadError")}</span>
             </>
           )}
         </div>

@@ -37,7 +37,7 @@ build:cloudflare -> db:migrate:remote -> deploy:worker -> deploy:verify
    EDGE_EVER_PASSWORD='<你的密码>' bun run deploy:setup
    ```
 
-`deploy:setup` 使用项目内置 Wrangler；缺少授权时启动 `wrangler login`，创建或复用 D1、R2，并把非 Secret 配置写入 Git 忽略的 `.env.local`。`deploy:manual` 会执行 doctor、生产构建、统一部署流水线和远端验证。
+`deploy:setup` 使用项目内置 Wrangler；缺少授权时启动 `wrangler login`，创建 D1 和生产/预览 Workers KV namespace，并把非 Secret 配置写入 Git 忽略的 `.env.local`。发现同名资源但未明确配置 ID 时会停止，避免复用未知数据。`deploy:manual` 会执行 doctor、生产构建、统一部署流水线和远端验证。
 
 ## 完全手动创建资源
 
@@ -47,14 +47,20 @@ build:cloudflare -> db:migrate:remote -> deploy:worker -> deploy:verify
 cp .env.local.example .env.local
 bun install
 bunx wrangler d1 create edgeever
-bunx wrangler r2 bucket create edgeever-resources
+bunx wrangler kv namespace create edgeever-resources
+bunx wrangler kv namespace create edgeever-resources-preview
 ```
 
 将返回的 D1 ID 和资源名称写入 `.env.local`：
 
 ```text
 EDGE_EVER_D1_DATABASE_ID=<database_id>
-EDGE_EVER_R2_BUCKET_NAME=edgeever-resources
+EDGE_EVER_KV_NAMESPACE_NAME=edgeever-resources
+EDGE_EVER_KV_NAMESPACE_ID=<namespace_id>
+EDGE_EVER_KV_PREVIEW_NAMESPACE_NAME=edgeever-resources-preview
+EDGE_EVER_KV_PREVIEW_NAMESPACE_ID=<preview_namespace_id>
+EDGE_EVER_RESOURCE_STORAGE_LIMIT_BYTES=786432000
+EDGE_EVER_WORKERS_FREE_CONFIRMED=true
 EDGE_EVER_AUTH_USERNAME=admin
 EDGE_EVER_AUTH_PASSWORD=<强密码>
 EDGE_EVER_SESSION_TTL_DAYS=400
@@ -84,7 +90,7 @@ EdgeEver 采用安全关闭策略：生产实例未完成 D1 migration 或鉴权
     bun run auth:reset-password -- --remote --username admin
   ```
 
-D1 和 R2 的 binding 名称必须分别为 `DB` 和 `RESOURCES`。已有实例仍可使用 `EDGE_EVER_AUTH_PASSWORD_HASH`；两个密码 Secret 同时存在时优先使用 hash。
+D1 和 Workers KV 的 binding 名称必须分别为 `DB` 和 `RESOURCES`。单文件上限为 25 MiB，实例总物理存储硬限制为 750 MiB；Workers Free 达到账号级 KV 配额后操作会失败而不会产生超额费用。已有实例仍可使用 `EDGE_EVER_AUTH_PASSWORD_HASH`；两个密码 Secret 同时存在时优先使用 hash。
 
 ## 开启 Workers Builds 和自动更新
 

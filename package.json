@@ -58,7 +58,7 @@
         "description": "EdgeEver 的 D1 数据库。用于存储 notebooks、memos、memo_contents、resources 元数据、全文搜索索引、修订记录和审计事件。"
       },
       "RESOURCES": {
-        "description": "EdgeEver 的 R2 对象存储桶。用于存储笔记内图片、附件和未来导入导出文件；D1 只保存资源元数据和 memo 关联。"
+        "description": "EdgeEver 的 Workers KV namespace。用于存储笔记内图片和附件；D1 保存资源元数据、容量预留和清理队列。"
       },
       "EDGE_EVER_AUTH_PASSWORD": {
         "description": "首次登录密码，必填。请设置一个仅用于此实例的强密码；部署后可在个人设置中修改。"

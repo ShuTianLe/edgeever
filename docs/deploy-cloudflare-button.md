@@ -1,14 +1,14 @@
 # Deploy EdgeEver with Cloudflare
 
-The **Deploy to Cloudflare** button is the recommended first-installation path. It creates a repository in your GitHub account, provisions the Worker, D1 database, and R2 bucket, applies the database migrations, and connects the repository to Cloudflare Workers Builds.
+The **Deploy to Cloudflare** button is the recommended first-installation path. It creates a repository in your GitHub account, provisions the Worker, D1 database, and Workers KV namespace, applies the database migrations, and connects the repository to Cloudflare Workers Builds.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/tianma-if/edgeever)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ShuTianLe/edgeever)
 
 ## First Installation
 
 1. Sign in to Cloudflare and GitHub, then open the button above.
 2. Authorize the **Cloudflare Workers & Pages** GitHub App when requested.
-3. Choose the destination repository, Worker name, D1 database name, and R2 bucket name.
+3. Choose the destination repository, Worker name, D1 database name, and Workers KV namespace.
 4. Set `EDGE_EVER_AUTH_PASSWORD` to a strong password that is unique to this instance. The field is a Worker Secret and must not be committed to Git.
 5. Save and deploy. Cloudflare runs the repository's common deployment pipeline: build, remote D1 migrations, Worker deployment, and deployment verification.
 6. Open the resulting `*.workers.dev` URL. Confirm `/api/health` returns `200` with `"ok": true`, then sign in as `admin` with the password chosen during setup.

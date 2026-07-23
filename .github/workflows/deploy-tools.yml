@@ -4,14 +4,22 @@ on:
   pull_request:
     paths:
       - "scripts/cloudflare-deploy.mjs"
+      - "scripts/cloudflare-workers-builds.mjs"
       - "scripts/run-wrangler.mjs"
       - "scripts/wrangler-runner.mjs"
       - "scripts/verify-deployment.mjs"
+      - "apps/api/src/index.ts"
+      - "apps/api/src/resource-store.ts"
+      - "migrations/0016_kv_resource_storage.sql"
+      - "wrangler.toml"
+      - ".env.local.example"
+      - "docs/openapi.json"
       - ".dev.vars.example"
       - ".github/workflows/sync-edgeever-upstream.yml"
       - "tests/deployment-entrypoints.test.ts"
       - "tests/wrangler-runner.test.ts"
       - "tests/deployment-verify.test.ts"
+      - "tests/kv-resource-storage.test.ts"
       - "package.json"
       - "bun.lock"
       - ".github/workflows/deploy-tools.yml"
@@ -20,14 +28,22 @@ on:
       - main
     paths:
       - "scripts/cloudflare-deploy.mjs"
+      - "scripts/cloudflare-workers-builds.mjs"
       - "scripts/run-wrangler.mjs"
       - "scripts/wrangler-runner.mjs"
       - "scripts/verify-deployment.mjs"
+      - "apps/api/src/index.ts"
+      - "apps/api/src/resource-store.ts"
+      - "migrations/0016_kv_resource_storage.sql"
+      - "wrangler.toml"
+      - ".env.local.example"
+      - "docs/openapi.json"
       - ".dev.vars.example"
       - ".github/workflows/sync-edgeever-upstream.yml"
       - "tests/deployment-entrypoints.test.ts"
       - "tests/wrangler-runner.test.ts"
       - "tests/deployment-verify.test.ts"
+      - "tests/kv-resource-storage.test.ts"
       - "package.json"
       - "bun.lock"
       - ".github/workflows/deploy-tools.yml"
@@ -61,4 +77,4 @@ jobs:
         run: bun scripts/run-wrangler.mjs --version
 
       - name: Test deployment tooling
-        run: bun test tests/wrangler-runner.test.ts tests/deployment-verify.test.ts tests/deployment-entrypoints.test.ts
+        run: bun test tests/wrangler-runner.test.ts tests/deployment-verify.test.ts tests/deployment-entrypoints.test.ts tests/kv-resource-storage.test.ts

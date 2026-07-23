@@ -37,7 +37,7 @@ EDGE_EVER_BUILDS_API_TOKEN=<token>
 
 ### 部署 API token
 
-如果命令提示没有可用的部署 API token，请打开 **Worker** -> **Settings** -> **Builds** -> **API token**，创建或选择一个能够部署 Worker 并更新 D1、R2 的 API token，然后重试。存在多个候选时，直接在终端中按名称选择。
+如果命令提示没有可用的部署 API token，请打开 **Worker** -> **Settings** -> **Builds** -> **API token**，创建或选择一个能够部署 Worker 并更新 D1、Workers KV binding 的 API token，然后重试。存在多个候选时，直接在终端中按名称选择。
 
 ## 更新与排错
 

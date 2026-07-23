@@ -364,6 +364,7 @@ export const enUS = {
     uploadingFile: "Uploading: {{filename}}",
     title: "Attachment manager",
     fileCount: "{{count}} files",
+    pendingDeletion: "{{size}} pending cleanup",
     imageCount: "{{count}} images",
     filters: {
       all: "All",

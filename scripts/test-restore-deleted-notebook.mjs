@@ -76,6 +76,7 @@ const createEnv = () => {
         get: async () => null,
         put: async () => undefined,
       },
+      EDGE_EVER_ALLOW_UNAUTHENTICATED: "true",
     },
   };
 };

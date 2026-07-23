@@ -3234,8 +3234,8 @@ const ResourcesModal = ({
       setFilter(result.resources.some((resource) => resource.kind === "image") ? "image" : "all");
       setUploadProgress("上传成功！");
     },
-    onError: () => {
-      setUploadProgress("");
+    onError: (error) => {
+      setUploadProgress(error instanceof Error ? error.message : "上传失败，请稍后重试");
     },
   });
 
@@ -3245,6 +3245,9 @@ const ResourcesModal = ({
     totalBytes: 0,
     imageCount: 0,
     attachmentCount: 0,
+    storedBytes: 0,
+    storageLimitBytes: 750 * 1024 * 1024,
+    pendingDeletionBytes: 0,
   };
   const filteredResources = resources.filter((resource) => {
     const isDocument = isDocumentResource(resource);
@@ -3312,7 +3315,9 @@ const ResourcesModal = ({
               <Text style={styles.managementTitle}>附件管理</Text>
             </View>
             <Text numberOfLines={1} style={styles.managementSubtitle}>
-              {formatBytes(summary.totalBytes)} • {translate(`${summary.totalCount} 文件`)} • {translate(`${summary.imageCount} 图片`)}
+              {formatBytes(summary.storedBytes)} / {formatBytes(summary.storageLimitBytes)}
+              {summary.pendingDeletionBytes > 0 ? ` • ${translate(`${formatBytes(summary.pendingDeletionBytes)} 待清理`)}` : ""}
+              {` • ${translate(`${summary.totalCount} 文件`)} • ${translate(`${summary.imageCount} 图片`)}`}
             </Text>
           </View>
         </View>

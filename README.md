@@ -57,7 +57,7 @@ Choose any one of the following three options to complete deployment.
 
 ### Option A: Deploy to Cloudflare (Recommended)
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/tianma-if/edgeever)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ShuTianLe/edgeever)
 
 One-click deployment creates a dedicated GitHub repository and the required Cloudflare resources, then automatically redeploys after the repository's daily upstream sync; see [Deploy EdgeEver with Cloudflare](docs/deploy-cloudflare-button.md) for setup and troubleshooting.
 
@@ -71,7 +71,7 @@ Copy this prompt into your AI coding assistant, such as Claude Code, Codex, Open
 
 ```text
 Please follow these steps:
-1. Create a GitHub repository from https://github.com/tianma-if/edgeever and clone it locally.
+1. Create a GitHub repository from https://github.com/ShuTianLe/edgeever and clone it locally.
 2. Follow docs/agent-deploy-cloudflare.md to create Cloudflare resources and run `bun run deploy:manual`.
 3. Run `bun run deploy:builds:setup` to connect the deployed Worker to the repository's `main` branch through Cloudflare Workers Builds. If setup needs a token, use a User API Token, not an Account API Token.
 4. Verify the first automatic build and the daily upstream-update workflow.
@@ -81,13 +81,13 @@ Agents should follow [AI Agent Cloudflare Deployment](docs/agent-deploy-cloudfla
 
 After the first deployment, see [Cloudflare Workers Builds](docs/cloudflare-workers-builds.md). All installation entry points use the same build, migration, deployment, and verification pipeline.
 
-> Common pitfall: Cloudflare R2, D1, and Workers may still require a Visa card during activation or usage, even when you stay within the free quotas.
+> This branch does not enable R2. Attachments use KV included with Workers Free; operations fail instead of producing overage charges when the account-level free quota is exhausted. Do not upgrade the account to Workers Paid if hard quota enforcement is required.
 
 ### Option C: Manual Deployment
 
 Please refer to the [Cloudflare Manual Deployment Guide](docs/manual-deploy.md) for advanced first-time installation, Cloudflare resource setup, troubleshooting, and emergency recovery. After the first deployment, connect Workers Builds; future repository updates deploy automatically.
 
-The automated helper commands are recommended. The manual template uses `admin` / `admin123` for the initial login, and the password can be changed later in Personal Settings. If you create the Cloudflare resources manually, finish configuring `.env.local`—including the D1 ID, R2 bucket, and the 400-day session limit—before running `bun run deploy:manual`.
+The automated helper commands are recommended. The manual template uses `admin` / `admin123` for the initial login, and the password can be changed later in Personal Settings. If you create the Cloudflare resources manually, finish configuring `.env.local`—including the D1 ID, Workers KV namespace IDs, and the 400-day session limit—before running `bun run deploy:manual`.
 
 Production deployments fail closed: when D1 migrations or the login Secret are missing, the instance shows a diagnosable configuration error and denies access instead of falling back to an unauthenticated workspace. Never insert plaintext passwords into D1; use the recovery command documented in the manual deployment guide.
 
@@ -125,7 +125,7 @@ The desktop app remains on the roadmap and is planned to use Tauri.
 - Editor: TipTap / ProseMirror with Markdown support; PWA uses vite-plugin-pwa, Workbox, and Dexie.
 - Mobile app: Expo + React Native, with SQLite local storage and incremental sync.
 - Web clipper: Manifest V3, Mozilla Readability, and Turndown for Chrome and Microsoft Edge.
-- Backend: Cloudflare Workers, Hono, Zod, D1, and R2, with REST API, OpenAPI, and Remote MCP.
+- Backend: Cloudflare Workers, Hono, Zod, D1, and Workers KV, with REST API, OpenAPI, and Remote MCP.
 
 ## Quick Start
 
@@ -141,7 +141,7 @@ Apply local D1 migrations:
 bun run db:migrate:local
 ```
 
-Start the default development environment. It applies pending local migrations and initializes local D1/R2 stores once with the repository's fixed demo seed. Existing local changes are preserved on later restarts, and no remote instance is contacted.
+Start the default development environment. It applies pending local migrations and initializes local D1/KV stores once with the repository's fixed demo seed. Existing local changes are preserved on later restarts, and no remote instance is contacted.
 
 ```sh
 bun run dev
@@ -173,7 +173,7 @@ packages/shared   Shared types, Zod schemas, TipTap / Markdown conversion
 scripts           Wrangler wrapper, password hash, CLI, MCP stdio bridge, Evernote ENEX import
 migrations        D1 database migrations
 docs              OpenAPI schema, migration guides, and deployment docs
-wrangler.toml     Cloudflare Workers, Assets, D1, R2 configuration
+wrangler.toml     Cloudflare Workers, Assets, D1, Workers KV configuration
 ```
 
 ## Content Formats
